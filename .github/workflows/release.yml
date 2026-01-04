@@ -28,16 +28,30 @@ jobs:
       
       - name: Download IINA
         run: |
-          # Download the latest IINA release
-          DOWNLOAD_URL=$(curl -s https://api.github.com/repos/iina/iina/releases/latest | jq -r '.assets[] | select(.name | endswith(".dmg")) | .browser_download_url' | head -1)
-          if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
-            echo "Failed to find IINA download URL"
-            exit 1
+          # Get the latest IINA release using a more robust method
+          echo "Fetching latest IINA release info..."
+          RELEASE_JSON=$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/iina/iina/releases/latest)
+          echo "Release JSON: $RELEASE_JSON" | head -c 500
+          
+          # Extract DMG download URL with fallback
+          DOWNLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | endswith(".dmg")) | .browser_download_url' 2>/dev/null | head -1)
+          
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "Failed to parse download URL, trying alternative method..."
+            DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep -o 'https://github.com/iina/iina/releases/download/[^"]*\.dmg' | head -1)
           fi
+          
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "Failed to find IINA download URL from API, using fallback..."
+            DOWNLOAD_URL="https://github.com/iina/iina/releases/download/v1.4.7/IINA-v1.4.7.dmg"
+          fi
+          
           echo "Downloading from: $DOWNLOAD_URL"
-          curl -L -o IINA.dmg "$DOWNLOAD_URL"
-          hdiutil attach IINA.dmg -nobrowse -quiet
-          cp -R /Volumes/IINA/IINA.app /Applications/ 2>/dev/null || cp -R /Volumes/IINA.app /Applications/
+          curl -L -o IINA.dmg "$DOWNLOAD_URL" || { echo "Download failed"; exit 1; }
+          ls -lh IINA.dmg
+          
+          hdiutil attach IINA.dmg -nobrowse -quiet || { echo "Failed to attach DMG"; exit 1; }
+          cp -R /Volumes/IINA/IINA.app /Applications/ 2>/dev/null || cp -R /Volumes/IINA.app /Applications/ 2>/dev/null || { echo "Failed to copy IINA.app"; exit 1; }
           hdiutil detach /Volumes/IINA -quiet 2>/dev/null || hdiutil detach /Volumes/IINA.app -quiet 2>/dev/null || true
       
       - name: Setup iina-plugin CLI
