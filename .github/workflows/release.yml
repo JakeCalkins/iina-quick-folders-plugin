@@ -6,6 +6,10 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+  packages: read
+
 jobs:
   build-and-release:
     runs-on: macos-latest
@@ -28,40 +32,38 @@ jobs:
       
       - name: Download IINA
         run: |
-          # Get the latest IINA release using a more robust method
-          echo "Fetching latest IINA release info..."
-          RELEASE_JSON=$(curl -s -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/iina/iina/releases/latest)
-          echo "Release JSON: $RELEASE_JSON" | head -c 500
+          # Use a known version that includes iina-plugin CLI
+          DOWNLOAD_URL="https://github.com/iina/iina/releases/download/v1.4.1/IINA-v1.4.1.dmg"
           
-          # Extract DMG download URL with fallback
-          DOWNLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '.assets[] | select(.name | endswith(".dmg")) | .browser_download_url' 2>/dev/null | head -1)
-          
-          if [ -z "$DOWNLOAD_URL" ]; then
-            echo "Failed to parse download URL, trying alternative method..."
-            DOWNLOAD_URL=$(echo "$RELEASE_JSON" | grep -o 'https://github.com/iina/iina/releases/download/[^"]*\.dmg' | head -1)
-          fi
-          
-          if [ -z "$DOWNLOAD_URL" ]; then
-            echo "Failed to find IINA download URL from API, using fallback..."
-            DOWNLOAD_URL="https://github.com/iina/iina/releases/download/v1.4.7/IINA-v1.4.7.dmg"
-          fi
-          
-          echo "Downloading from: $DOWNLOAD_URL"
+          echo "Downloading IINA from: $DOWNLOAD_URL"
           curl -L -o IINA.dmg "$DOWNLOAD_URL" || { echo "Download failed"; exit 1; }
           ls -lh IINA.dmg
           
+          echo "Attaching DMG..."
           hdiutil attach IINA.dmg -nobrowse -quiet || { echo "Failed to attach DMG"; exit 1; }
+          
+          echo "Listing mounted volumes..."
+          ls -la /Volumes/ | grep -i iina
+          
+          echo "Copying IINA.app to /Applications..."
           cp -R /Volumes/IINA/IINA.app /Applications/ 2>/dev/null || cp -R /Volumes/IINA.app /Applications/ 2>/dev/null || { echo "Failed to copy IINA.app"; exit 1; }
+          
+          echo "Detaching DMG..."
           hdiutil detach /Volumes/IINA -quiet 2>/dev/null || hdiutil detach /Volumes/IINA.app -quiet 2>/dev/null || true
       
       - name: Setup iina-plugin CLI
         run: |
-          if [ ! -f "/Applications/IINA.app/Contents/MacOS/iina-plugin" ]; then
-            echo "Error: iina-plugin CLI not found"
-            ls -la /Applications/IINA.app/Contents/MacOS/ 2>/dev/null || echo "IINA.app not found"
+          echo "Checking for iina-plugin CLI..."
+          if [ -f "/Applications/IINA.app/Contents/MacOS/iina-plugin" ]; then
+            echo "✓ iina-plugin found"
+            sudo ln -sf /Applications/IINA.app/Contents/MacOS/iina-plugin /usr/local/bin/iina-plugin
+            which iina-plugin
+          else
+            echo "✗ iina-plugin not found"
+            echo "Contents of /Applications/IINA.app/Contents/MacOS/:"
+            ls -la /Applications/IINA.app/Contents/MacOS/ || echo "Directory not found"
             exit 1
           fi
-          sudo ln -sf /Applications/IINA.app/Contents/MacOS/iina-plugin /usr/local/bin/iina-plugin
       
       - name: Build plugin package
         run: |
