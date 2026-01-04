@@ -32,8 +32,8 @@ jobs:
       
       - name: Download IINA
         run: |
-          # Use a known version that includes iina-plugin CLI
-          DOWNLOAD_URL="https://github.com/iina/iina/releases/download/v1.4.1/IINA-v1.4.1.dmg"
+          # Use IINA v1.4.7 which includes the iina-plugin CLI
+          DOWNLOAD_URL="https://github.com/iina/iina/releases/download/v1.4.7/IINA-v1.4.7.dmg"
           
           echo "Downloading IINA from: $DOWNLOAD_URL"
           curl -L -o IINA.dmg "$DOWNLOAD_URL" || { echo "Download failed"; exit 1; }
@@ -58,6 +58,7 @@ jobs:
             echo "✓ iina-plugin found"
             sudo ln -sf /Applications/IINA.app/Contents/MacOS/iina-plugin /usr/local/bin/iina-plugin
             which iina-plugin
+            iina-plugin --version || echo "Version check failed but CLI exists"
           else
             echo "✗ iina-plugin not found"
             echo "Contents of /Applications/IINA.app/Contents/MacOS/:"
