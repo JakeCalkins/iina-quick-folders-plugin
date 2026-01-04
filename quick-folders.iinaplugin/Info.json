@@ -7,6 +7,8 @@
     "name": "JakeCalkins",
     "url": "https://github.com/JakeCalkins/iina-quick-folders-plugin"
   },
+  "ghRepo": "JakeCalkins/iina-quick-folders-plugin",
+  "ghVersion": 3,
   "entry": "main.js",
   "permissions": [
     "file-system",
