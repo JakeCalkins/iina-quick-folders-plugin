@@ -32,12 +32,16 @@ jobs:
       
       - name: Download IINA
         run: |
-          # Use IINA v1.4.7 which includes the iina-plugin CLI
-          DOWNLOAD_URL="https://github.com/iina/iina/releases/download/v1.4.7/IINA-v1.4.7.dmg"
+          # Use IINA v1.4.6 (latest stable with iina-plugin CLI)
+          DOWNLOAD_URL="https://github.com/iina/iina/releases/download/v1.4.6/IINA-v1.4.6.dmg"
           
           echo "Downloading IINA from: $DOWNLOAD_URL"
+          curl -L -I "$DOWNLOAD_URL" 2>&1 | head -20
           curl -L -o IINA.dmg "$DOWNLOAD_URL" || { echo "Download failed"; exit 1; }
           ls -lh IINA.dmg
+          
+          # Verify the file is a valid DMG
+          file IINA.dmg
           
           echo "Attaching DMG..."
           hdiutil attach IINA.dmg -nobrowse -quiet || { echo "Failed to attach DMG"; exit 1; }
