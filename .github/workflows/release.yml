@@ -32,8 +32,8 @@ jobs:
       
       - name: Download IINA
         run: |
-          # Use IINA v1.4.6 (latest stable with iina-plugin CLI)
-          DOWNLOAD_URL="https://github.com/iina/iina/releases/download/v1.4.6/IINA-v1.4.6.dmg"
+          # Use IINA v1.4.1 (latest stable with iina-plugin CLI)
+          DOWNLOAD_URL="https://github.com/iina/iina/releases/download/v1.4.1/IINA-v1.4.1.dmg"
           
           echo "Downloading IINA from: $DOWNLOAD_URL"
           curl -L -I "$DOWNLOAD_URL" 2>&1 | head -20
