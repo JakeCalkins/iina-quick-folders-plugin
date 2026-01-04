@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quick Folders</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Indexing modal overlay -->
+    <div id="indexing-modal" class="indexing-modal hidden">
+      <div class="indexing-modal-content">
+        <div class="indexing-modal-icon">􀖇</div>
+        <h2 class="indexing-modal-title">Indexing Large Folder</h2>
+        <p class="indexing-modal-text">
+          Search index is building...
+        </p>
+        <div class="indexing-modal-progress">
+          <div id="modal-progress-text" class="modal-progress-text">Processing files...</div>
+          <div class="progress-bar-wrapper">
+            <div id="modal-progress-bar" class="progress-bar"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <main class="pane">
+      <header class="nav-bar">
+        <button class="back-btn hidden" id="back-btn" type="button" title="Go back">‹</button>
+        <div class="breadcrumb" id="breadcrumb">Quick Folders</div>
+        <div class="header-buttons">
+          <button id="refresh-btn" class="icon-btn" type="button" title="Refresh folder index">↻</button>
+          <button id="add-folder-btn" class="add-btn" type="button" title="Add a new folder (keyboard: n)">Add Folder</button>
+        </div>
+      </header>
+      <div class="divider"></div>
+      <div id="depth-warning" class="depth-warning hidden">
+        ⚠️ Files at this depth aren't searchable for performance reasons. (Configure in settings)
+      </div>
+      <section id="item-list" class="list" aria-label="Folders and files"></section>
+      <footer class="footer">
+        <div id="spinner-container" class="spinner-container">
+          <div class="progress-info">
+            <p id="progress-text" class="spinner-text">Building index for search...</p>
+          </div>
+          <div class="progress-bar-wrapper">
+            <div id="progress-bar" class="progress-bar"></div>
+          </div>
+        </div>
+        <div id="search-bar" class="search-bar hidden">
+          <input 
+            type="text" 
+            id="search-input" 
+            class="search-input" 
+            placeholder="Search files..."
+            aria-label="Search files"
+          />
+          <button id="clear-search-btn" class="clear-btn" type="button" title="Clear search">
+            <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M2 2L10 10M10 2L2 10" stroke="currentColor"/>
+            </svg>
+          </button>
+          <select id="filter-dropdown" class="filter-dropdown" aria-label="Filter by file type">
+            <option value="all">All Files</option>
+            <optgroup id="video-group" label="Video"></optgroup>
+            <optgroup id="audio-group" label="Audio"></optgroup>
+            <optgroup id="image-group" label="Image"></optgroup>
+            <optgroup id="other-group" label="Other"></optgroup>
+          </select>
+        </div>
+      </footer>
+    </main>
+    <script src="../constants.js"></script>
+    <script src="messaging.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
+

@@ -1,0 +1,26 @@
+{
+  "name": "Quick Folders",
+  "identifier": "com.jakecalkins.quickfolders",
+  "version": "2.1.0",
+  "description": "Adds a Quick Folders window to browse and open local folders quickly.",
+  "author": {
+    "name": "JakeCalkins"
+  },
+  "entry": "main.js",
+  "permissions": [
+    "file-system",
+    "show-osd"
+  ],
+  "allowedDomains": [
+    "*"
+  ],
+  "preferencesPage": "preferences.html",
+  "preferenceDefaults": {
+    "filterImages": false,
+    "filterAudio": false,
+    "videoOnly": false,
+    "maxIndexDepth": 3,
+    "openWindowShortcut": "cmd+shift+a",
+    "addFolderShortcut": "n"
+  }
+}

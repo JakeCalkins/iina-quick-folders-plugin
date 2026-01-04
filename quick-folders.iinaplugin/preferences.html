@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quick Folders Preferences</title>
+  </head>
+  <body>
+    
+    <h2>File Filters</h2>
+
+    <div class="pref-section">
+      <h4>Filter out specific file types when browsing folders</h4>
+      <label>
+        <input type="checkbox" data-type="bool" data-pref-key="filterImages" />
+        Filter out images
+      </label>
+      <p class="small secondary pref-help">
+        Hide image files (.jpg, .png, etc.)
+      </p>
+    </div>
+
+    <div class="pref-section">
+      <label>
+        <input type="checkbox" data-type="bool" data-pref-key="filterAudio" />
+        Filter out audio
+      </label>
+      <p class="small secondary pref-help">
+        Hide audio files (.mp3, .wav, etc.)
+      </p>
+    </div>
+
+    <div class="pref-section">
+      <label>
+        <input type="checkbox" data-type="bool" data-pref-key="videoOnly" />
+        Only show video
+      </label>
+      <p class="small secondary pref-help">
+        When enabled, only video files will be shown (overrides the filters above)
+      </p>
+    </div>
+
+    <h2>Search Index Settings</h2>
+    
+    <div class="pref-section">
+      <label>
+        Maximum search index depth
+        <input type="number" data-type="int" data-pref-key="maxIndexDepth" min="1" max="10" style="width: 60px; margin-left: 8px;" />
+      </label>
+      <p class="small secondary pref-help">
+        ⚠️ Maximum folder depth for indexing files (default: 3). Higher values improve search coverage but may significantly impact performance on large folder structures. Files beyond this depth are browsable, but won't appear in search results.
+      </p>
+    </div>
+
+    <h2>Keyboard Shortcuts</h2>
+    
+    <div class="pref-section">
+      <label>
+        Open window keyboard shortcut
+        <input type="text" data-type="string" data-pref-key="openWindowShortcut" placeholder="cmd+shift+a" style="width: 150px; margin-left: 8px;" />
+      </label>
+      <p class="small secondary pref-help">
+        Keyboard shortcut to open Quick Folders window (e.g., "cmd+shift+a", "ctrl+f")
+      </p>
+    </div>
+
+    <div class="pref-section">
+      <label>
+        Add folder keyboard shortcut
+        <input type="text" data-type="string" data-pref-key="addFolderShortcut" placeholder="n" style="width: 150px; margin-left: 8px;" />
+      </label>
+      <p class="small secondary pref-help">
+        Keyboard shortcut to add a folder (e.g., "n", "cmd+n")
+      </p>
+    </div>
+  </body>
+</html>
