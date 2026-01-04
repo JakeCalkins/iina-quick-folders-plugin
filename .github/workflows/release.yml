@@ -18,16 +18,22 @@ jobs:
         id: get_version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
       
+      - name: Download IINA
+        run: |
+          # Download the latest IINA release
+          LATEST_IINA=$(curl -s https://api.github.com/repos/iina/iina/releases/latest | grep 'browser_download_url.*\.dmg' | cut -d '"' -f 4)
+          curl -L -o IINA.dmg "$LATEST_IINA"
+          hdiutil attach IINA.dmg -nobrowse
+          cp -R /Volumes/IINA/IINA.app /Applications/ || cp -R /Volumes/IINA*/IINA.app /Applications/
+          hdiutil detach /Volumes/IINA* || true
+      
       - name: Setup iina-plugin CLI
         run: |
-          # Assumes IINA is installed on the runner
-          # Alternatively, you can download IINA and extract the CLI tool
-          if [ -f "/Applications/IINA.app/Contents/MacOS/iina-plugin" ]; then
-            sudo ln -s /Applications/IINA.app/Contents/MacOS/iina-plugin /usr/local/bin/iina-plugin
-          else
-            echo "IINA not found. Please install IINA or modify this workflow."
+          if [ ! -f "/Applications/IINA.app/Contents/MacOS/iina-plugin" ]; then
+            echo "Error: iina-plugin not found after installation"
             exit 1
           fi
+          sudo ln -sf /Applications/IINA.app/Contents/MacOS/iina-plugin /usr/local/bin/iina-plugin
       
       - name: Build plugin package
         run: |
