@@ -1,0 +1,54 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Get version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      
+      - name: Setup iina-plugin CLI
+        run: |
+          # Assumes IINA is installed on the runner
+          # Alternatively, you can download IINA and extract the CLI tool
+          if [ -f "/Applications/IINA.app/Contents/MacOS/iina-plugin" ]; then
+            sudo ln -s /Applications/IINA.app/Contents/MacOS/iina-plugin /usr/local/bin/iina-plugin
+          else
+            echo "IINA not found. Please install IINA or modify this workflow."
+            exit 1
+          fi
+      
+      - name: Build plugin package
+        run: |
+          iina-plugin pack quick-folders.iinaplugin
+          mv quick-folders.iinaplgz quick-folders-${{ steps.get_version.outputs.VERSION }}.iinaplgz
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: quick-folders-${{ steps.get_version.outputs.VERSION }}.iinaplgz
+          body: |
+            ## Quick Folders v${{ steps.get_version.outputs.VERSION }}
+            
+            ### Installation
+            1. Download the `.iinaplgz` file below
+            2. Double-click to install, or drag onto IINA
+            3. Restart IINA if prompted
+            
+            ### What's Changed
+            See [CHANGELOG.md](CHANGELOG.md) for details.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

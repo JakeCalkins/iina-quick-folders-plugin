@@ -1,2 +1,14 @@
+# IDE
 .vscode
+.idea
+
+# macOS
 .DS_Store
+
+# Build artifacts
+*.iinaplgz
+node_modules/
+package-lock.json
+
+# Development
+.iinaplugin-dev
