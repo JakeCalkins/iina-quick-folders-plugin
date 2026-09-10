@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Installation and troubleshooting guide
+    url: https://github.com/JakeCalkins/iina-quick-folders-plugin/blob/main/docs/INSTALLATION.md
+    about: Check setup steps and common fixes before opening an issue.
+  - name: IINA support
+    url: https://github.com/iina/iina/discussions
+    about: Ask questions about IINA itself in the upstream community.

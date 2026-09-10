@@ -1,0 +1,57 @@
+name: Bug report
+description: Report reproducible incorrect behavior in Quick Folders.
+title: "[Bug]: "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve Quick Folders. Please remove private filenames and paths from screenshots or logs.
+  - type: checkboxes
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: I am using IINA 1.4.0 or later.
+          required: true
+  - type: input
+    attributes:
+      label: Quick Folders version
+      description: Find this in IINA Settings → Plugins.
+      placeholder: 2.3.0
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: IINA and macOS versions
+      placeholder: IINA 1.4.2; macOS 15.6
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What happened?
+      description: Describe the actual and expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Quick Folders
+        2. …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Logs and screenshots
+      description: Drag files here. Remove private filenames, paths, or other sensitive information first.
+  - type: dropdown
+    attributes:
+      label: Installation method
+      options:
+        - GitHub repository URL
+        - Release package (.iinaplgz)
+        - Development link
+    validations:
+      required: true

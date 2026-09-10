@@ -1,0 +1,17 @@
+{
+  "name": "iina-quick-folders-plugin",
+  "private": true,
+  "description": "Development commands for the Quick Folders IINA plugin",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "check": "node scripts/check.mjs",
+    "package": "bash scripts/package-plugin.sh",
+    "verify": "npm run check && npm test && npm run package",
+    "dev:link": "bash scripts/iina-plugin.sh link",
+    "dev:unlink": "bash scripts/iina-plugin.sh unlink",
+    "release:prepare": "node scripts/prepare-release.mjs"
+  }
+}

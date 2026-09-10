@@ -7,8 +7,9 @@
 
 # Build artifacts
 *.iinaplgz
+*.sha256
+dist/
 node_modules/
-package-lock.json
 
 # Development
 .iinaplugin-dev

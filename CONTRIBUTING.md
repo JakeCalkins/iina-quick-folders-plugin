@@ -1,134 +1,107 @@
 # Contributing to Quick Folders
 
-Thank you for your interest in contributing to Quick Folders! This document provides guidelines and instructions for contributing.
+Thanks for improving Quick Folders. Small, focused changes with clear test evidence are the easiest to review and ship.
 
-## Code of Conduct
+## Before you start
 
-Please be respectful and constructive in all interactions. We aim to maintain a welcoming environment for all contributors.
+- Automated coding agents should follow the root [AGENTS.md](AGENTS.md) plus the nearest scoped `AGENTS.md` for files they change. Matching `CLAUDE.md` files reference those instructions without duplicating them.
+- Search [existing issues](https://github.com/JakeCalkins/iina-quick-folders-plugin/issues) before filing a new one.
+- Use the bug or feature issue form so environment and reproduction details are captured consistently.
+- For security-sensitive reports, follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
+- Be respectful and constructive in issues, reviews, and discussions.
 
-## How Can I Contribute?
+## Development setup
 
-### Reporting Bugs
+Requirements:
 
-Before creating bug reports, please check existing issues to avoid duplicates. When creating a bug report, include:
+- macOS with IINA 1.4.0 or later for integration testing
+- Node.js 20 or later for validation and unit tests
+- `zip` and `unzip` for local packaging
 
-- **Clear title and description**
-- **Steps to reproduce** the issue
-- **Expected behavior** vs actual behavior
-- **IINA version** and macOS version
-- **Plugin version**
-- **Screenshots** if applicable
-- **Console logs** from IINA's log viewer (if relevant)
+Clone and verify the repository:
 
-### Suggesting Enhancements
-
-Enhancement suggestions are tracked as GitHub issues. When creating an enhancement suggestion, include:
-
-- **Clear title and description**
-- **Use case** - explain why this would be useful
-- **Proposed solution** or implementation approach
-- **Alternatives considered**
-- **Mockups or examples** if applicable
-
-### Pull Requests
-
-1. **Fork the repository** and create your branch from `main`
-2. **Set up development environment**:
-   ```sh
-   iina-plugin link quick-folders.iinaplugin
-   ```
-3. **Make your changes**:
-   - Follow the existing code style
-   - Add comments for complex logic
-   - Update documentation if needed
-4. **Test your changes** thoroughly:
-   - Test with different folder structures
-   - Verify all preferences work
-   - Check keyboard shortcuts
-   - Ensure no console errors
-5. **Update CHANGELOG.md** with your changes
-6. **Commit your changes** with clear commit messages
-7. **Push to your fork** and submit a pull request
-
-### Pull Request Guidelines
-
-- **One feature per PR** - Keep PRs focused
-- **Include tests** if applicable
-- **Update documentation** as needed
-- **Follow code style** of the existing codebase
-- **Write clear commit messages**
-  - Use present tense ("Add feature" not "Added feature")
-  - Reference issues and PRs when relevant
-
-## Development Process
-
-### Setting Up Development Environment
-
-1. Install IINA 1.4.0 or later
-2. Clone the repository
-3. Link plugin for development:
-   ```sh
-   iina-plugin link quick-folders.iinaplugin
-   ```
-4. Make changes and restart IINA to test
-
-### Code Structure
-
-```
-quick-folders.iinaplugin/
-├── main.js           # Main plugin entry point
-├── constants.js      # Configuration constants
-├── preferences.html  # Settings UI
-└── ui/              # Quick Folders window
-    ├── index.html
-    ├── app.js
-    ├── messaging.js
-    └── styles.css
-```
-
-### Testing
-
-- Test with various folder structures and depths
-- Verify all filter options work correctly
-- Test keyboard shortcuts don't conflict
-- Check preferences persistence
-- Test with different IINA versions if possible
-
-### Building
-
-To create a distributable package:
 ```sh
-iina-plugin pack quick-folders.iinaplugin
+git clone https://github.com/JakeCalkins/iina-quick-folders-plugin.git
+cd iina-quick-folders-plugin
+npm run verify
 ```
 
-## Coding Standards
+No `npm install` step is required because the project has no npm dependencies.
 
-### JavaScript Style
+For live development, link the checkout with IINA's bundled plugin CLI:
 
-- Use modern JavaScript (ES6+) features where supported
-- Use `const` and `let`, avoid `var`
-- Destructure imports: `const { core, event } = iina;`
-- Use arrow functions for callbacks
-- Add comments for complex logic
-- Keep functions focused and single-purpose
+```sh
+npm run dev:link
+```
 
-### Naming Conventions
+The helper finds `iina-plugin` on `PATH` or inside `/Applications/IINA.app`; no global symlink is required. Restart IINA after backend changes. Run `npm run dev:unlink` when you no longer want the development plugin loaded.
 
-- **Variables/Functions**: camelCase (`myVariable`, `handleClick`)
-- **Constants**: UPPER_SNAKE_CASE (`MAX_DEPTH`, `DEFAULT_FILTER`)
-- **Classes**: PascalCase (`FileManager`, `FolderBrowser`)
-- **Private methods**: Prefix with underscore (`_internalMethod`)
+## Development commands
 
-### Documentation
+| Command | Purpose |
+| --- | --- |
+| `npm test` | Run the Node test suite |
+| `npm run check` | Check JavaScript syntax, the plugin manifest, browser references, documentation links, agent references, and high-confidence privacy patterns |
+| `npm run package` | Build a tested `.iinaplgz` and SHA-256 checksum in `dist/` |
+| `npm run verify` | Run all static checks, tests, and packaging |
+| `npm run dev:link` / `npm run dev:unlink` | Add or remove the development plugin in IINA |
+| `npm run release:prepare -- 2.3.0` | Update the manifest and promote Unreleased changelog notes for a release |
 
-- Add JSDoc comments for public functions
-- Keep comments up to date with code changes
-- Explain "why" not just "what"
+CI runs the checks on Node 20 and Node 24 for every pull request and push to `main`. Successful CI runs also expose a short-lived installable package under **Actions → run → Artifacts**.
 
-## Questions?
+## Code organization
 
-Feel free to open an issue with your question or reach out to the maintainers.
+```text
+quick-folders.iinaplugin/
+├── main.js                    # IINA integration and backend orchestration
+├── file-types.js              # Shared media classification
+├── async-resource-loader.js   # Bounded backend worker queues
+├── browse-state.js            # Pure shared browse/selection state
+└── ui/                        # Standalone-window modules and styles
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for runtime boundaries, module responsibilities, and invariants.
+
+## Making a change
+
+1. Branch from `main` and keep the branch focused on one feature or fix.
+2. Prefer small functions and pure modules for behavior that can be tested outside IINA.
+3. Add comments where they explain intent, constraints, or a non-obvious tradeoff.
+4. Add or update tests for behavior changes.
+5. Add user-visible changes to the appropriate `CHANGELOG.md` section.
+6. Run `npm run verify`.
+7. Exercise relevant behavior in IINA, including light/dark mode and the 500×600 default window when UI changes are involved.
+8. Open a pull request and complete its test checklist.
+
+## Manual regression checklist
+
+Choose the relevant scenarios for your change:
+
+- Add and remove folder roots; restart IINA and confirm persistence
+- Navigate nested folders and return with both the back button and breadcrumbs
+- Combine fuzzy search with file-extension filters
+- Refresh a large index and confirm the UI remains responsive
+- Verify single, toggle, range, and select-all behavior
+- Mark watched/unwatched items and exercise the Watched view
+- Open media and verify thumbnail and metadata loading
+- Confirm delete behavior with both success and failure cases
+- Test keyboard shortcuts, dialogs, focus restoration, and reduced motion
+- Confirm the browser console and IINA logs contain no new errors
+
+## Pull request expectations
+
+- Explain the user problem and the resulting behavior.
+- Include exact automated commands and manual scenarios tested.
+- Link the issue with `Closes #123` when applicable.
+- Call out migrations, permanent filesystem effects, or follow-up work.
+- Keep commits readable; use present-tense summaries such as `Fix stale filter state`.
+
+Maintainers may squash merge a pull request. GitHub release notes are grouped from pull-request labels, so accurate labels and titles matter.
+
+## Releases
+
+Maintainers should follow [docs/RELEASING.md](docs/RELEASING.md). Release tags are validated against both `Info.json` and `CHANGELOG.md`; a mismatch prevents publication.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the GNU General Public License v3.0.
+By contributing, you agree that your contributions will be licensed under the [GNU General Public License v3.0](LICENSE).
