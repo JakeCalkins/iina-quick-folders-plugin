@@ -10,12 +10,9 @@
   "ghRepo": "JakeCalkins/iina-quick-folders-plugin",
   "ghVersion": 7,
   "entry": "main.js",
+  "global": "global.js",
   "permissions": [
-    "file-system",
-    "show-osd"
-  ],
-  "allowedDomains": [
-    "*"
+    "file-system"
   ],
   "preferencesPage": "preferences.html",
   "preferenceDefaults": {

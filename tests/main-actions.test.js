@@ -19,6 +19,8 @@ test("main entry persists watched state and permanently deletes only validated f
     version: 2,
   });
   const handlers = new Map();
+  const globalHandlers = new Map();
+  const globalMessages = [];
   const menuCallbacks = new Map();
   const messages = [];
   const deletedPaths = [];
@@ -26,7 +28,7 @@ test("main entry persists watched state and permanently deletes only validated f
   const executedTools = [];
   const menuItems = new Map();
   const windowFrames = [];
-  let queuePlaylistPath = null;
+  let nativePlaylist = [];
   let playedPlaylistIndex = null;
   let mediaListCalls = 0;
 
@@ -41,10 +43,6 @@ test("main entry persists watched state and permanently deletes only validated f
     },
     write(path, content) {
       if (path === statePath) persistedState = content;
-      if (path.startsWith("@tmp/quick-folders-queue-")) {
-        queuePlaylistPath = path;
-        fileApi.queuePlaylist = content;
-      }
     },
     list(path, options) {
       if (path === "/media" && options === undefined) mediaListCalls++;
@@ -71,16 +69,23 @@ test("main entry persists watched state and permanently deletes only validated f
     core: {
       open(path) {
         openedPaths.push(path);
+        nativePlaylist = [path, "/media/b.mkv", "/media/failure.mov"]
+          .filter((candidate, index, values) => existing.has(candidate) && values.indexOf(candidate) === index)
+          .map((filename) => ({ filename }));
       },
     },
     playlist: {
-      list() {
-        if (!fileApi.queuePlaylist) return [];
-        return fileApi.queuePlaylist.trim().split("\n").slice(1).map((url) => ({
-          filename: decodeURIComponent(url.slice("file://".length)),
-        }));
+      list() { return nativePlaylist.slice(); },
+      add(url, at) {
+        nativePlaylist.splice(at, 0, { filename: decodeURIComponent(url.slice("file://".length)) });
       },
+      remove(index) { nativePlaylist.splice(index, 1); },
       play(index) { playedPlaylistIndex = index; },
+    },
+    global: {
+      getLabel() { return null; },
+      onMessage(type, callback) { globalHandlers.set(type, callback); },
+      postMessage(...args) { globalMessages.push(args); },
     },
     file: fileApi,
     utils: {
@@ -139,7 +144,12 @@ test("main entry persists watched state and permanently deletes only validated f
 
   const realSetTimeout = global.setTimeout;
   const realSetInterval = global.setInterval;
-  global.setTimeout = () => 0;
+  global.setTimeout = (callback, milliseconds) => {
+    // Queue playback deliberately samples native playlist stability; resolve
+    // only those short waits without triggering unrelated startup timers.
+    if (milliseconds === 50) callback();
+    return 0;
+  };
   global.setInterval = () => 0;
   try {
     delete require.cache[require.resolve("../main.js")];
@@ -151,6 +161,7 @@ test("main entry persists watched state and permanently deletes only validated f
     const initialUpdate = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.equal(initialUpdate.atRoot, true);
     assert.equal(initialUpdate.items.at(-1).isWatchedRoot, true);
+    assert.equal(Array.isArray(initialUpdate.indexedFiles), true);
     assert.deepEqual(initialUpdate.queueItems.map((item) => item.path), ["/media/b.mkv"]);
 
     handlers.get("queue-add")({
@@ -160,6 +171,12 @@ test("main entry persists watched state and permanently deletes only validated f
     assert.deepEqual(queueAddResult.succeeded, ["/media/a.mp4"]);
     assert.equal(queueAddResult.failed.length, 1);
     assert.deepEqual(JSON.parse(persistedState).queuePaths, ["/media/b.mkv", "/media/a.mp4"]);
+    const queueUpdate = messages.filter((message) => message.type === "update-items").at(-1).data;
+    assert.equal(
+      Object.hasOwn(queueUpdate, "indexedFiles"),
+      false,
+      "queue-only updates should not resend the complete file index",
+    );
 
     handlers.get("queue-reorder")({
       paths: ["/media/a.mp4"],
@@ -167,10 +184,19 @@ test("main entry persists watched state and permanently deletes only validated f
       position: "before",
     });
     await handlers.get("queue-play")();
-    assert.equal(fileApi.queuePlaylist, "#EXTM3U\nfile:///media/a.mp4\nfile:///media/b.mkv\n");
-    assert.match(queuePlaylistPath, /^@tmp\/quick-folders-queue-\d+\.m3u8$/);
-    assert.deepEqual(openedPaths, [`/tmp/${queuePlaylistPath.slice("@tmp/".length)}`]);
-    assert.equal(playedPlaylistIndex, 0);
+    assert.deepEqual(globalMessages.pop(), [
+      "quick-folders-play-queue",
+      { paths: ["/media/a.mp4", "/media/b.mkv"] },
+    ]);
+    globalHandlers.get("quick-folders-queue-result")({
+      action: "played",
+      succeeded: ["/media/a.mp4", "/media/b.mkv"],
+      failed: [],
+    });
+    assert.deepEqual(
+      messages.filter((message) => message.type === "queue-action-result").at(-1).data.succeeded,
+      ["/media/a.mp4", "/media/b.mkv"],
+    );
 
     handlers.get("queue-remove")({ paths: ["/media/b.mkv"] });
     assert.deepEqual(JSON.parse(persistedState).queuePaths, ["/media/a.mp4"]);
@@ -186,6 +212,8 @@ test("main entry persists watched state and permanently deletes only validated f
     assert.deepEqual(watchResult.succeeded, ["/media/a.mp4"]);
     assert.equal(watchResult.failed.length, 2);
     assert.deepEqual(JSON.parse(persistedState).watchedPaths, ["/media/a.mp4"]);
+    const watchedUpdate = messages.filter((message) => message.type === "update-items").at(-1).data;
+    assert.equal(Array.isArray(watchedUpdate.indexedFiles), true);
 
     handlers.get("open-item")({ path: "@watched", isDir: true, isWatchedRoot: true });
     const watchedView = messages.filter((message) => message.type === "update-items").at(-1).data;
@@ -209,14 +237,17 @@ test("main entry persists watched state and permanently deletes only validated f
       handlers.get("refresh-index")(),
       handlers.get("refresh-index")(),
     ]);
-    global.setTimeout = () => 0;
+    global.setTimeout = (callback, milliseconds) => {
+      if (milliseconds === 50) callback();
+      return 0;
+    };
     assert.equal(mediaListCalls - listCallsBeforeRefresh, 1, "concurrent refreshes should share one index scan");
     const refreshedState = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.deepEqual(refreshedState.availableExtensions, ["mkv", "mov", "mp4"]);
 
     handlers.get("open-item")({ path: "/outside/movie.mp4", isDir: false });
     handlers.get("open-item")({ path: "/media/b.mkv", isDir: false });
-    assert.deepEqual(openedPaths, [`/tmp/${queuePlaylistPath.slice("@tmp/".length)}`, "/media/b.mkv"]);
+    assert.deepEqual(openedPaths, ["/media/b.mkv"]);
 
     handlers.get("request-thumbnail")({ path: "/media/b.mkv" });
     const immediateThumbnail = messages.filter((message) => message.type === "thumbnail-ready").at(-1);

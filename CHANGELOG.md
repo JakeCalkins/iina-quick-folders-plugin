@@ -22,6 +22,7 @@ _No unreleased changes yet._
 - Made a plain file click play immediately, while modifier-click, the selection control, and Space provide predictable multi-selection
 - Bounded thumbnail work with type-aware Quick Look, image resizing, safe temporary cleanup, deduplication, and in-memory caching
 - Restyled metadata chips as quiet, borderless labels with adaptive light and dark appearance
+- Kept indexing non-blocking and reduced repeated index transfers and list rebuilding during navigation and selection
 
 ### Fixed
 - Polished file and queue drag-and-drop with compact drag previews, a labeled queue target, clearer source feedback, and more visible reorder positions.
@@ -32,6 +33,13 @@ _No unreleased changes yet._
 - Avoided unbounded Quick Look work for unsupported containers such as MKV
 - Prevented lazy thumbnails and metadata chips from disappearing when IINA suspends animations or replaces the standalone WebView
 - Kept row hover treatments and the expanding root-folder Remove button inside the scroll viewport
+- Kept the complete interface usable at narrow window widths, including header, selection, queue, search, and confirmation controls
+- Kept browsing, selection, dragging, search, and filtering available while the search index refreshes, with compact non-blocking progress
+- Made Shift-arrow queue selection include the initially focused row
+- Isolated **Watch Queue** in a managed IINA player, then verified and repaired the native playlist after folder autoload so only queued items play in the requested order
+
+### Security
+- Reduced the plugin manifest to its required filesystem permission, removed persistent path-bearing diagnostics, and tightened configured-root path validation
 
 ## [2.3.5] - 2026-09-10
 

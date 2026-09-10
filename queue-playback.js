@@ -1,54 +1,115 @@
 // Creates an ordered native IINA playlist from validated media paths. Kept
-// separate from main.js so playlist serialization and async handoff stay
-// testable without an IINA runtime.
+// separate from main.js so the asynchronous native handoff stays testable
+// without an IINA runtime.
 const QuickFoldersQueuePlayback = (() => {
-  const PLAYLIST_PREFIX = "@tmp/quick-folders-queue";
-
+  const REQUIRED_INPUT_STABLE_SAMPLES = 20;
+  const REQUIRED_STABLE_SAMPLES = 30;
+  const MAX_ATTEMPTS = 180;
   function fileUrlForPath(path) {
-    // M3U is line-oriented, so encode every segment. Spaces, Unicode, #, ?,
-    // and even embedded newlines then remain unambiguous.
+    // IINA's playlist API accepts URLs. Encoding every segment preserves spaces,
+    // Unicode, URL punctuation, and even embedded newlines in local filenames.
     return `file://${path.split("/").map((segment) => encodeURIComponent(segment)).join("/")}`;
   }
 
   function create(options) {
-    const { core, file, playlist, utils } = options;
-    const now = options.now || Date.now;
+    const { core, playlist } = options;
     const wait = options.wait || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
 
-    function writePlaylist(paths) {
-      if (!utils || typeof utils.resolvePath !== "function") {
-        throw new Error("This IINA version cannot create a native queue playlist");
-      }
-      // IINA remembers positions for recently opened playlists. A unique name
-      // ensures every Watch Queue action begins with its first entry.
-      const playlistFile = `${PLAYLIST_PREFIX}-${now()}.m3u8`;
-      file.write(playlistFile, ["#EXTM3U", ...paths.map(fileUrlForPath), ""].join("\n"));
-      const resolvedPath = utils.resolvePath(playlistFile);
-      if (typeof resolvedPath !== "string" || !resolvedPath) {
-        throw new Error("IINA could not resolve the queue playlist path");
-      }
-      return resolvedPath;
-    }
-
-    function playlistMatches(paths) {
-      if (!playlist || typeof playlist.list !== "function") return false;
-      const items = playlist.list();
+    function playlistMatches(items, paths) {
       if (!Array.isArray(items) || items.length !== paths.length) return false;
       return items.every((item, index) => item && item.filename === paths[index]);
     }
 
-    async function start(paths) {
-      core.open(writePlaylist(paths));
-      if (!playlist || typeof playlist.play !== "function") return;
+    function rebuildQueueFromFirstItem(items, firstIndex, paths) {
+      const needsRemoval = items.length > 1;
+      if (needsRemoval && typeof playlist.remove !== "function") {
+        throw new Error("This IINA version cannot isolate the queue playlist");
+      }
+      if (paths.length > 1 && typeof playlist.add !== "function") {
+        throw new Error("This IINA version cannot build the queue playlist");
+      }
+      for (let index = items.length - 1; index >= 0; index--) {
+        if (index !== firstIndex) playlist.remove(index);
+      }
+      // Omitting `at` is IINA's supported append operation; passing the current
+      // count is rejected even though it looks like a conventional insert index.
+      paths.slice(1).forEach((path) => playlist.add(fileUrlForPath(path)));
+    }
 
-      // Playlist loading is asynchronous. Wait for the exact list before
-      // selecting index zero so an already-playing later item cannot win.
-      for (let attempt = 0; attempt < 20; attempt++) {
-        if (playlistMatches(paths)) {
+    function hasQueueMembership(items, paths) {
+      if (!Array.isArray(items) || items.length !== paths.length) return false;
+      const remaining = new Set(items.map((item) => item && item.filename));
+      return paths.every((path) => remaining.delete(path)) && remaining.size === 0;
+    }
+
+    function reorderQueueItems(items, paths) {
+      if (typeof playlist.move !== "function") {
+        throw new Error("This IINA version cannot order the queue playlist");
+      }
+      const currentOrder = items.map((item) => item && item.filename);
+      paths.forEach((path, targetIndex) => {
+        const currentIndex = currentOrder.indexOf(path);
+        if (currentIndex === targetIndex) return;
+        playlist.move(currentIndex, targetIndex);
+        const [moved] = currentOrder.splice(currentIndex, 1);
+        currentOrder.splice(targetIndex, 0, moved);
+      });
+    }
+
+    function playlistSignature(items) {
+      if (!Array.isArray(items)) return "";
+      return items.map((item) => item && item.filename || "").join("\u0000");
+    }
+
+    async function start(paths, { openFirst = true } = {}) {
+      if (openFirst) core.open(paths[0]);
+      if (!playlist || typeof playlist.list !== "function" || typeof playlist.play !== "function") return;
+
+      // IINA's folder matcher updates the playlist asynchronously after a local
+      // file opens. Let each native state settle before reconciling it so we do
+      // not fight that process, restart playback, or briefly expose neighbors.
+      let previousSignature = null;
+      let inputStableSamples = 0;
+      let stableSamples = 0;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        await wait(50);
+        const items = playlist.list();
+        const firstIndex = Array.isArray(items)
+          ? items.findIndex((item) => item && item.filename === paths[0])
+          : -1;
+        if (firstIndex === -1) {
+          previousSignature = null;
+          inputStableSamples = 0;
+          stableSamples = 0;
+          continue;
+        }
+
+        if (playlistMatches(items, paths)) {
+          stableSamples++;
+          if (stableSamples < REQUIRED_STABLE_SAMPLES) continue;
           playlist.play(0);
           return;
         }
-        await wait(50);
+
+        stableSamples = 0;
+        const signature = playlistSignature(items);
+        inputStableSamples = signature === previousSignature ? inputStableSamples + 1 : 1;
+        previousSignature = signature;
+        if (inputStableSamples < REQUIRED_INPUT_STABLE_SAMPLES) continue;
+
+        // Some IINA versions insert an item before the current entry even when
+        // add() is called without an index. Verify the native result and use
+        // move() to enforce queue order instead of trusting insertion position.
+        if (hasQueueMembership(items, paths)) {
+          reorderQueueItems(items, paths);
+        } else {
+          rebuildQueueFromFirstItem(items, firstIndex, paths);
+        }
+        // The retained first item becomes index zero after backwards removal.
+        // Reassert it immediately in case the native player changed position.
+        playlist.play(0);
+        previousSignature = null;
+        inputStableSamples = 0;
       }
       throw new Error("IINA did not finish loading the queue playlist");
     }

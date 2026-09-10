@@ -144,14 +144,20 @@ const QuickFoldersQueueController = (() => {
       selectedPaths = new Set(result.selectedPaths);
       anchorPath = result.anchorPath;
       focusedPath = path;
-      render();
+      refreshSelectionPresentation();
       focusRow(path);
     }
 
     function moveFocus(path, key, extendSelection) {
-      const target = QuickFoldersInteractions.getNavigationTarget(items, path || focusedPath, key);
+      const currentPath = path || focusedPath;
+      const target = QuickFoldersInteractions.getNavigationTarget(items, currentPath, key);
       if (!target) return;
-      if (extendSelection) selectPath(target.path, { shiftKey: true }, { range: true });
+      if (extendSelection) {
+        // Start a keyboard range at the currently focused row, matching the
+        // main browser list even when the queue has no prior selection.
+        if (!anchorPath) anchorPath = currentPath || target.path;
+        selectPath(target.path, { shiftKey: true }, { range: true });
+      }
       else focusRow(target.path);
     }
 
@@ -223,19 +229,19 @@ const QuickFoldersQueueController = (() => {
         } else if (event.key === "Delete" || event.key === "Backspace") {
           event.preventDefault();
           event.stopPropagation();
-          removePaths(selected ? Array.from(selectedPaths) : [item.path]);
+          removePaths(selectedPaths.has(item.path) ? Array.from(selectedPaths) : [item.path]);
         } else if (event.key === "Escape") {
           event.stopPropagation();
           selectedPaths.clear();
           anchorPath = null;
-          render();
+          refreshSelectionPresentation();
           focusRow(item.path);
         } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
           event.preventDefault();
           event.stopPropagation();
           selectedPaths = new Set(orderedPaths());
           anchorPath = items[0] ? items[0].path : null;
-          render();
+          refreshSelectionPresentation();
           focusRow(item.path);
         }
       });
@@ -247,11 +253,7 @@ const QuickFoldersQueueController = (() => {
           selectedPaths = new Set([item.path]);
           anchorPath = item.path;
           focusedPath = item.path;
-          row.classList.add("selected");
-          row.setAttribute("aria-selected", "true");
-          count.textContent = "1 selected";
-          removeButton.classList.remove("hidden");
-          removeButton.textContent = "Remove 1";
+          refreshSelectionPresentation();
         }
         writeDraggedPaths(event, queueDragPaths);
         setDragPreview(event, queueDragPaths, QuickFoldersView.getDisplayName(item), "reorder");
@@ -290,24 +292,7 @@ const QuickFoldersQueueController = (() => {
       return row;
     }
 
-    function render() {
-      const paths = new Set(orderedPaths());
-      selectedPaths = new Set(Array.from(selectedPaths).filter((path) => paths.has(path)));
-      if (anchorPath && !paths.has(anchorPath)) anchorPath = null;
-      if (focusedPath && !paths.has(focusedPath)) focusedPath = null;
-
-      list.innerHTML = "";
-      if (items.length === 0) {
-        const empty = document.createElement("div");
-        empty.className = "queue-empty";
-        empty.innerHTML = '<span class="queue-empty-icon" aria-hidden="true">＋</span><strong>Build your queue</strong><span>Drag media onto the queue button below.</span>';
-        list.appendChild(empty);
-      } else {
-        const fragment = document.createDocumentFragment();
-        items.forEach((item, index) => fragment.appendChild(createRow(item, index)));
-        list.appendChild(fragment);
-      }
-
+    function updateControls() {
       const selectedCount = selectedPaths.size;
       count.textContent = selectedCount > 0
         ? `${selectedCount} selected`
@@ -322,8 +307,60 @@ const QuickFoldersQueueController = (() => {
       removeButton.textContent = `Remove ${selectedCount}`;
     }
 
+    function refreshSelectionPresentation() {
+      list.querySelectorAll(".queue-row[data-path]").forEach((row) => {
+        const selected = selectedPaths.has(row.dataset.path);
+        row.classList.toggle("selected", selected);
+        row.setAttribute("aria-selected", String(selected));
+      });
+      updateControls();
+    }
+
+    function render() {
+      const paths = new Set(orderedPaths());
+      selectedPaths = new Set(Array.from(selectedPaths).filter((path) => paths.has(path)));
+      if (anchorPath && !paths.has(anchorPath)) anchorPath = null;
+      if (focusedPath && !paths.has(focusedPath)) focusedPath = null;
+
+      list.innerHTML = "";
+      if (items.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "queue-empty";
+        const icon = document.createElement("span");
+        icon.className = "queue-empty-icon";
+        icon.textContent = "+";
+        icon.setAttribute("aria-hidden", "true");
+        const title = document.createElement("strong");
+        title.textContent = "Build your queue";
+        const detail = document.createElement("span");
+        detail.textContent = "Drag media onto the queue button below.";
+        empty.appendChild(icon);
+        empty.appendChild(title);
+        empty.appendChild(detail);
+        list.appendChild(empty);
+      } else {
+        const fragment = document.createDocumentFragment();
+        items.forEach((item, index) => fragment.appendChild(createRow(item, index)));
+        list.appendChild(fragment);
+      }
+
+      updateControls();
+    }
+
     function setItems(nextItems) {
-      items = Array.isArray(nextItems) ? nextItems.filter((item) => item && item.path) : [];
+      const normalizedItems = Array.isArray(nextItems)
+        ? nextItems.filter((item) => item && item.path)
+        : [];
+      const unchanged = normalizedItems.length === items.length
+        && normalizedItems.every((item, index) => {
+          const current = items[index];
+          return current
+            && item.path === current.path
+            && item.name === current.name
+            && Boolean(item.watched) === Boolean(current.watched);
+        });
+      if (unchanged) return;
+      items = normalizedItems;
       render();
     }
 

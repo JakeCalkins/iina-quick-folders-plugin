@@ -81,11 +81,13 @@ Choose the relevant scenarios for your change:
 - Navigate nested folders and return with both the back button and breadcrumbs
 - Combine fuzzy search with file-extension filters
 - Refresh a large index and confirm the UI remains responsive
+- Resize through 500×600, 420×600, 360×500, and 320×480; confirm controls remain visible and the queue overlays cleanly at narrow widths
 - Verify plain-click playback plus modifier, range, Space-key, and select-all selection behavior
 - Mark watched/unwatched items and exercise the Watched view
 - Open media and verify thumbnail and metadata loading
 - Confirm delete behavior with both success and failure cases
 - Test keyboard shortcuts, dialogs, focus restoration, and reduced motion
+- Confirm selection does not restart loaded thumbnails or metadata, and an unchanged queue update does not disturb focus or selection
 - Confirm the browser console and IINA logs contain no new errors
 
 ## Pull request expectations

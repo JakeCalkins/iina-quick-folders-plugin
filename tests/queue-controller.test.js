@@ -184,11 +184,27 @@ test("queue editor multi-selects, multi-drags, reorders, and accepts bucket drop
     ]);
 
     let rows = elements.list.querySelectorAll(".queue-row[data-path]");
+    const firstRow = rows[0];
+    controller.setItems([
+      { name: "a.mp4", path: "/media/a.mp4" },
+      { name: "b.mkv", path: "/media/b.mkv" },
+      { name: "c.mov", path: "/media/c.mov" },
+    ]);
+    assert.equal(
+      elements.list.querySelectorAll(".queue-row[data-path]")[0],
+      firstRow,
+      "an unchanged backend state should not rebuild queue rows",
+    );
     rows[0].dispatch("click");
     rows = elements.list.querySelectorAll(".queue-row[data-path]");
+    assert.equal(rows[0], firstRow, "selection should not rebuild queue rows");
     rows[1].dispatch("click", { shiftKey: true });
     rows = elements.list.querySelectorAll(".queue-row[data-path]");
     assert.equal(elements.count.textContent, "2 selected");
+
+    rows[0].dispatch("keydown", { key: "Escape" });
+    rows[0].dispatch("keydown", { key: "ArrowDown", shiftKey: true });
+    assert.equal(elements.count.textContent, "2 selected", "Shift-arrow should include its focused anchor");
 
     const dataTransfer = createTransfer();
     rows[0].dispatch("dragstart", { dataTransfer });

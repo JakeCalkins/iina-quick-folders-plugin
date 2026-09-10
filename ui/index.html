@@ -7,23 +7,6 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <!-- Indexing modal overlay -->
-    <div id="indexing-modal" class="indexing-modal hidden">
-      <div class="indexing-modal-content">
-        <div class="indexing-modal-icon">􀖇</div>
-        <h2 class="indexing-modal-title">Indexing Large Folder</h2>
-        <p class="indexing-modal-text">
-          Search index is building...
-        </p>
-        <div class="indexing-modal-progress">
-          <div id="modal-progress-text" class="modal-progress-text">Processing files...</div>
-          <div class="progress-bar-wrapper">
-            <div id="modal-progress-bar" class="progress-bar"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div id="app-shell" class="app-shell">
     <main class="pane">
       <header class="nav-bar">
@@ -43,7 +26,7 @@
               <path d="M15.6 3.8V7h-3.2" />
             </svg>
           </button>
-          <button id="add-folder-btn" class="add-btn" type="button" title="Add a new folder (keyboard: n)">
+          <button id="add-folder-btn" class="add-btn" type="button" title="Add a new folder (keyboard: n)" aria-label="Add Folder">
             <svg class="button-icon add-icon" viewBox="0 0 20 20" aria-hidden="true">
               <path d="M10 4.5v11M4.5 10h11" />
             </svg>
@@ -84,7 +67,7 @@
             aria-keyshortcuts="/ Meta+F Control+F"
             title='Fuzzy search. Use "quotes" for literals, * or ? as wildcards, - to exclude, and ext:mp4 for extensions.'
           />
-          <button id="clear-search-btn" class="clear-btn" type="button" title="Clear search">
+          <button id="clear-search-btn" class="clear-btn" type="button" title="Clear search" disabled>
             <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M2 2L10 10M10 2L2 10" stroke="currentColor"/>
             </svg>
@@ -132,7 +115,7 @@
       </footer>
     </aside>
     </div>
-    <div id="delete-modal" class="confirm-modal hidden" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+    <div id="delete-modal" class="confirm-modal hidden" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" aria-describedby="delete-modal-message">
       <div class="confirm-card">
         <div class="confirm-icon" aria-hidden="true">!</div>
         <h2 id="delete-modal-title">Permanently delete?</h2>

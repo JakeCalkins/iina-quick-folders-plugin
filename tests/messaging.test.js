@@ -19,8 +19,12 @@ test("sends messages through IINA when the plugin bridge is available", () => {
 
 test("browser fallback calls the native window channel once without recursion", () => {
   const messages = [];
+  const listeners = new Map();
   global.window = {
     location: { origin: "http://127.0.0.1:4175" },
+    addEventListener(type, callback) {
+      listeners.set(type, callback);
+    },
     postMessage(message, targetOrigin) {
       messages.push({ message, targetOrigin });
     },
@@ -31,6 +35,20 @@ test("browser fallback calls the native window channel once without recursion", 
       message: { type: "request-state", data: { refresh: true } },
       targetOrigin: "http://127.0.0.1:4175",
     }]);
+
+    const received = [];
+    messaging.onMessage("update-items", (data) => received.push(data));
+    listeners.get("message")({
+      source: global.window,
+      origin: "http://127.0.0.1:4175",
+      data: { type: "update-items", data: { items: ["safe"] } },
+    });
+    listeners.get("message")({
+      source: global.window,
+      origin: "https://untrusted.example",
+      data: { type: "update-items", data: { items: ["unsafe"] } },
+    });
+    assert.deepEqual(received, [{ items: ["safe"] }]);
   } finally {
     delete global.window;
   }

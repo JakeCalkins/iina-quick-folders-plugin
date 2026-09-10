@@ -32,7 +32,7 @@ See the [installation guide](docs/INSTALLATION.md) for upgrades, uninstalling, d
 2. Press `N` or choose **Add Folder**, then select a media folder.
 3. Browse the folder or use search and the file-type filter.
 4. Click a file to play it. Use `⌘`/`Ctrl`-click, Shift-click, or the row's selection control to build a selection for bulk actions.
-5. Drag one file—or a multi-selection—onto the queue button in the bottom bar. Open the queue to reorder it, then choose **Watch Queue** to play it through IINA’s native playlist.
+5. Drag one file—or a multi-selection—onto the queue button in the bottom bar. Open the queue to reorder it, then choose **Watch Queue** to open an ordered native IINA playlist containing only those files.
 
 Open **IINA → Settings → Plugins → Quick Folders → Settings** to change shortcuts, media filters, watched-file behavior, and indexing depth.
 
@@ -100,7 +100,7 @@ Release history and pending changes are maintained in [CHANGELOG.md](CHANGELOG.m
 - Use the repository’s structured [issue forms](https://github.com/JakeCalkins/iina-quick-folders-plugin/issues/new/choose) for bugs and features.
 - Report security-sensitive problems according to [SECURITY.md](SECURITY.md), not in a public issue.
 
-Quick Folders works with local paths you choose and requires IINA’s filesystem permission. Deletion actions are permanent and always require confirmation.
+Quick Folders works with local paths you choose and requires IINA’s filesystem permission. It does not request network access or persist diagnostic logs containing media paths. Deletion actions are permanent and always require confirmation.
 
 ## License
 

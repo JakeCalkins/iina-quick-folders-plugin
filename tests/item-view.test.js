@@ -79,14 +79,14 @@ function installFakeDom() {
   };
 }
 
-function createFileRow({ selected = false } = {}) {
+function createFileRow({ selected = false, isIndexing = false } = {}) {
   const calls = { dragEnd: [], dragStart: [], focus: [], move: [], open: [], select: [] };
   const item = { name: "Example.mkv", path: "/media/Example.mkv", isDir: false };
   const row = ItemView.create(item, {
     atRoot: false,
     focusedPath: item.path,
     hasSearchQuery: false,
-    isIndexing: false,
+    isIndexing,
     mediaPreview: { attachMetadata() {}, loadThumbnail() {} },
     selectedPaths: new Set(selected ? [item.path] : []),
     onFocusItem(entry) { calls.focus.push(entry.path); },
@@ -115,6 +115,21 @@ test("file rows expose a drag source for the queue", () => {
     assert.equal(row.classList.contains("dragging"), false);
     assert.deepEqual(calls.dragStart, ["/media/Example.mkv"]);
     assert.deepEqual(calls.dragEnd, ["/media/Example.mkv"]);
+  } finally {
+    delete global.document;
+    delete global.QuickFoldersView;
+    delete global.QuickFoldersFileTypes;
+  }
+});
+
+test("file rows remain interactive while the search index refreshes", () => {
+  installFakeDom();
+  try {
+    const { calls, row } = createFileRow({ isIndexing: true });
+    row.dispatch("click");
+    assert.equal(row.draggable, true);
+    assert.equal(row.tabIndex, 0);
+    assert.deepEqual(calls.open, ["/media/Example.mkv"]);
   } finally {
     delete global.document;
     delete global.QuickFoldersView;

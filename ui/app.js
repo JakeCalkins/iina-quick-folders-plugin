@@ -7,19 +7,15 @@ const spinnerContainer = document.getElementById("spinner-container");
 const searchBar = document.getElementById("search-bar");
 const progressBar = document.getElementById("progress-bar");
 const progressText = document.getElementById("progress-text");
-const indexingModal = document.getElementById("indexing-modal");
-const modalProgressBar = document.getElementById("modal-progress-bar");
-const modalProgressText = document.getElementById("modal-progress-text");
 function registerBackendMessages() {
-  if (typeof iina === "undefined" || !iina.onMessage) return;
-  iina.onMessage("index-building", handleIndexBuilding);
-  iina.onMessage("index-progress", handleIndexProgress);
-  iina.onMessage("index-complete", handleIndexComplete);
-  iina.onMessage("update-items", handleStateUpdate);
-  iina.onMessage("item-action-result", (result) => handleItemActionResult(result || {}));
-  iina.onMessage("queue-action-result", (result) => handleQueueActionResult(result || {}));
-  iina.onMessage("thumbnail-ready", mediaPreview.handleThumbnailReady);
-  iina.onMessage("media-metadata-ready", mediaPreview.handleMetadataReady);
+  QuickFoldersMessaging.onMessage("index-building", handleIndexBuilding);
+  QuickFoldersMessaging.onMessage("index-progress", handleIndexProgress);
+  QuickFoldersMessaging.onMessage("index-complete", handleIndexComplete);
+  QuickFoldersMessaging.onMessage("update-items", handleStateUpdate);
+  QuickFoldersMessaging.onMessage("item-action-result", (result) => handleItemActionResult(result || {}));
+  QuickFoldersMessaging.onMessage("queue-action-result", (result) => handleQueueActionResult(result || {}));
+  QuickFoldersMessaging.onMessage("thumbnail-ready", mediaPreview.handleThumbnailReady);
+  QuickFoldersMessaging.onMessage("media-metadata-ready", mediaPreview.handleMetadataReady);
 }
 
 const itemListEl = document.getElementById("item-list");
@@ -133,7 +129,8 @@ const queueController = QuickFoldersQueueController.create({
 });
 const deleteDialog = QuickFoldersDialogs.create({
   element: deleteModal,
-  initialFocus: confirmDeleteBtn,
+  // Default to the reversible choice so an accidental Return cannot delete.
+  initialFocus: cancelDeleteBtn,
   closeButtons: [cancelDeleteBtn],
   inertTarget: appShell,
 });
@@ -146,38 +143,35 @@ const helpDialog = QuickFoldersDialogs.create({
   toggleKey: "?",
 });
 
-function setIndexingUi(isBuilding, indexReady = true) {
+function setIndexingUi(isBuilding) {
   spinnerContainer.classList.toggle("hidden", !isBuilding);
-  if (isBuilding || indexReady) searchBar.classList.toggle("hidden", isBuilding);
+  // Browsing and the last published search index remain useful during a
+  // refresh, so progress must not replace the footer controls.
+  searchBar.classList.remove("hidden");
   if (refreshBtn) refreshBtn.disabled = isBuilding;
   itemListEl.setAttribute("aria-busy", String(isBuilding));
 }
 
 function handleIndexBuilding() {
   setIndexingUi(true);
-  if (progressBar) progressBar.style.width = "0%";
+  if (progressBar) {
+    progressBar.style.width = "35%";
+    progressBar.classList.add("indeterminate");
+  }
   if (progressText) progressText.textContent = "Indexing...";
 }
 
 function handleIndexProgress(data) {
   if (!data || !data.progress) return;
   const filesProcessed = Number(data.progress.filesProcessed) || 0;
-  const visualProgress = Math.min(filesProcessed % 100, 99);
-  if (filesProcessed > 50 && indexingModal) {
-    indexingModal.classList.remove("hidden");
-    if (modalProgressText) modalProgressText.textContent = `Processing: ${filesProcessed} files found`;
-    if (modalProgressBar) modalProgressBar.style.width = `${visualProgress}%`;
-  }
   if (progressText) progressText.textContent = `Indexing: ${filesProcessed} files found`;
-  if (progressBar) progressBar.style.width = `${visualProgress}%`;
 }
 
 function handleIndexComplete() {
-  if (progressBar) progressBar.style.width = "100%";
-  if (modalProgressBar) modalProgressBar.style.width = "100%";
-  setTimeout(() => {
-    if (indexingModal) indexingModal.classList.add("hidden");
-  }, 500);
+  if (progressBar) {
+    progressBar.classList.remove("indeterminate");
+    progressBar.style.width = "100%";
+  }
   setIndexingUi(false);
 }
 
@@ -194,7 +188,7 @@ function handleStateUpdate(state) {
   if (nextState.preferences) currentPreferences = { ...currentPreferences, ...nextState.preferences };
   queueController.setItems(nextState.queueItems || []);
   updateHelpShortcuts();
-  setIndexingUi(Boolean(nextState.isIndexing), Boolean(nextState.indexReady));
+  setIndexingUi(Boolean(nextState.isIndexing));
   populateExtensionDropdown();
   renderItems();
   messageReceived = true;
@@ -228,6 +222,7 @@ function populateExtensionDropdown() {
         option.textContent = extension.toUpperCase();
         group.appendChild(option);
       });
+      group.hidden = extensions.length === 0;
     });
     renderedExtensionOptionsKey = optionsKey;
   }
@@ -248,7 +243,25 @@ function getSelectedItems() {
 function clearSelection(shouldRender = true) {
   selectedPaths.clear();
   selectionAnchorPath = null;
-  if (shouldRender) renderItems();
+  if (shouldRender) refreshSelectionPresentation();
+}
+
+function refreshSelectionPresentation() {
+  const itemsByPath = new Map(renderedItems.map((item) => [item.path, item]));
+  itemListEl.querySelectorAll(".row[data-path]").forEach((row) => {
+    const item = itemsByPath.get(row.dataset.path);
+    if (!item || item.isDir) return;
+    const selected = selectedPaths.has(item.path);
+    row.classList.toggle("selected", selected);
+    row.setAttribute("aria-selected", String(selected));
+    row.setAttribute(
+      "aria-label",
+      `${QuickFoldersView.getDisplayName(item)}, ${selected ? "selected" : "not selected"}`,
+    );
+    const indicator = row.querySelector(".selection-indicator");
+    if (indicator) indicator.title = selected ? "Deselect file" : "Select file";
+  });
+  updateActionBar();
 }
 
 function selectItem(item, event, behavior = {}) {
@@ -268,7 +281,7 @@ function selectItem(item, event, behavior = {}) {
   selectedPaths = new Set(result.selectedPaths);
   selectionAnchorPath = result.anchorPath;
   focusedPath = item.path;
-  renderItems();
+  refreshSelectionPresentation();
   if (shouldRestoreFocus) focusItem(item.path);
 }
 
@@ -302,7 +315,7 @@ function moveItemFocus(item, key, { extendSelection = false } = {}) {
     selectedPaths = new Set(result.selectedPaths);
     selectionAnchorPath = anchorPath;
     focusedPath = target.path;
-    renderItems();
+    refreshSelectionPresentation();
   } else {
     focusedPath = target.path;
   }
@@ -457,6 +470,7 @@ function resetSearch({ focus = false, render = false } = {}) {
     searchInput.value = "";
     if (focus) searchInput.focus();
   }
+  if (clearSearchBtn) clearSearchBtn.disabled = true;
   if (render) renderItems();
 }
 
@@ -568,6 +582,7 @@ function renderItems() {
   renderBreadcrumb();
 
   if (filteredItems.length === 0) {
+    renderedItems = [];
     appendEmptyMessage(QuickFoldersView.getEmptyMessage({
       state: currentState,
       query: currentSearchQuery,
@@ -591,7 +606,6 @@ function renderItems() {
   const itemViewOptions = {
     atRoot: currentState.atRoot,
     hasSearchQuery: Boolean(currentSearchQuery),
-    isIndexing: currentState.isIndexing,
     mediaPreview,
     selectedPaths,
     focusedPath: focusedPath || (orderedItems[0] && orderedItems[0].path),
@@ -685,6 +699,7 @@ if (searchInput) {
   searchInput.addEventListener("input", (e) => {
     clearSelection(false);
     currentSearchQuery = e.target.value;
+    if (clearSearchBtn) clearSearchBtn.disabled = currentSearchQuery.length === 0;
     compiledSearchQuery = QuickFoldersSearch.compileQuery(currentSearchQuery);
     if (searchRenderTimer) clearTimeout(searchRenderTimer);
     searchRenderTimer = setTimeout(() => {
@@ -761,7 +776,7 @@ document.addEventListener("keydown", (event) => {
     const paths = getSelectableItems().map((item) => item.path);
     selectedPaths = new Set(paths);
     selectionAnchorPath = paths[0] || null;
-    renderItems();
+    refreshSelectionPresentation();
   } else if (event.key === "Escape") {
     clearSelection();
   } else if (event.key === "Delete" || event.key === "Backspace") {

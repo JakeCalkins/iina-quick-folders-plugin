@@ -17,6 +17,9 @@ test("accepts only paths contained by configured roots", () => {
   assert.equal(browseState.isPathWithinRoots("/media/library-copy/movie.mp4", roots), false);
   assert.equal(browseState.isPathWithinRoots("/media/library/../private/movie.mp4", roots), false);
   assert.equal(browseState.isPathWithinRoots("/media/library/\0movie.mp4", roots), false);
+  assert.equal(browseState.isPathWithinRoots("media/library/movie.mp4", roots), false);
+  assert.equal(browseState.isPathWithinRoots("/media/library/movie.mp4", [{ path: "media/library" }]), false);
+  assert.equal(browseState.isPathWithinRoots("/media/library/movie.mp4", [{ path: "/media/../library" }]), false);
 });
 
 test("partitions watched files after active files and directories", () => {
