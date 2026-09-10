@@ -85,6 +85,8 @@ npm run verify
 
 For live IINA development setup, architecture, and contribution expectations, see [CONTRIBUTING.md](CONTRIBUTING.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
 
+The [product direction report](docs/PRODUCT-ROADMAP.html) outlines a proposed roadmap for making Quick Folders a fast, playback-aware local video inbox.
+
 Release history and pending changes are maintained in [CHANGELOG.md](CHANGELOG.md).
 
 ## Support and security

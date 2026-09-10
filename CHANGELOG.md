@@ -23,6 +23,7 @@ _No unreleased changes yet._
 - Modularized shared file typing, indexed search, row rendering, dialogs, and media loading while reducing repeated work during rendering and indexing
 - Added dependency-free validation and packaging commands, pull-request CI, verified release artifacts, structured issue forms, and contributor/release documentation
 - Added scoped coding-agent guidance, Claude references, and automated checks for contributor-file packaging and common privacy leaks
+- Added an interactive product direction report covering the local-video-inbox vision, prioritized opportunities, performance targets, and a phased roadmap
 
 ### Fixed
 - Added adaptive colors for readable text and controls in macOS light mode

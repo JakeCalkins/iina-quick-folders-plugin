@@ -1,0 +1,1450 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="A product direction and implementation roadmap for making Quick Folders the fastest path from local media to what to watch next.">
+  <title>Quick Folders — Product Direction</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #f4f1e9;
+      --surface: #fffdf8;
+      --surface-strong: #ffffff;
+      --ink: #17243b;
+      --ink-soft: #596276;
+      --line: #d9d4c8;
+      --line-strong: #bdb6a8;
+      --blue: #3157d5;
+      --blue-deep: #203a91;
+      --blue-soft: #e8edff;
+      --coral: #ef765f;
+      --coral-soft: #ffe9e3;
+      --mint: #1d816f;
+      --mint-soft: #e0f3ed;
+      --gold: #a86c00;
+      --gold-soft: #fff0c9;
+      --shadow: 0 18px 50px rgba(30, 36, 56, 0.09);
+      --radius-lg: 28px;
+      --radius-md: 18px;
+      --radius-sm: 11px;
+      --content: 1180px;
+    }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --canvas: #111827;
+      --surface: #182236;
+      --surface-strong: #202c42;
+      --ink: #f7f1e6;
+      --ink-soft: #b7c0d1;
+      --line: #344158;
+      --line-strong: #526078;
+      --blue: #8fa8ff;
+      --blue-deep: #c5d0ff;
+      --blue-soft: #27355d;
+      --coral: #ff9b87;
+      --coral-soft: #57352f;
+      --mint: #72cfb9;
+      --mint-soft: #203f3c;
+      --gold: #f1bd5c;
+      --gold-soft: #4b3e25;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.24);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      text-rendering: optimizeLegibility;
+    }
+
+    button,
+    a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .reading-progress {
+      position: fixed;
+      inset: 0 0 auto;
+      z-index: 20;
+      height: 3px;
+      background: transparent;
+    }
+
+    .reading-progress span {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: var(--coral);
+      transition: width 80ms linear;
+    }
+
+    .utility-bar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      border-bottom: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+      background: color-mix(in srgb, var(--canvas) 88%, transparent);
+      backdrop-filter: blur(16px);
+    }
+
+    .utility-inner {
+      width: min(calc(100% - 32px), var(--content));
+      min-height: 58px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      font-weight: 760;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-mark {
+      width: 31px;
+      height: 31px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--ink);
+      border-radius: 9px;
+      background: var(--blue);
+      color: #fff;
+      box-shadow: 4px 4px 0 var(--ink);
+      font-size: 13px;
+      letter-spacing: -0.06em;
+    }
+
+    .utility-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .utility-button {
+      min-height: 36px;
+      padding: 7px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--ink);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+      transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+    }
+
+    .utility-button:hover {
+      transform: translateY(-2px);
+      border-color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .utility-button:active {
+      transform: translateY(0);
+    }
+
+    .utility-button:focus-visible,
+    .phase-tab:focus-visible,
+    .toc a:focus-visible {
+      outline: 3px solid color-mix(in srgb, var(--blue) 45%, transparent);
+      outline-offset: 3px;
+    }
+
+    main {
+      overflow: hidden;
+    }
+
+    .hero {
+      position: relative;
+      width: min(calc(100% - 32px), var(--content));
+      margin: 38px auto 0;
+      padding: clamp(42px, 7vw, 88px);
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-lg);
+      background: var(--surface-strong);
+      box-shadow: var(--shadow);
+    }
+
+    .hero::before,
+    .hero::after {
+      content: "";
+      position: absolute;
+      z-index: 0;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      pointer-events: none;
+    }
+
+    .hero > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero::before {
+      width: 370px;
+      height: 370px;
+      top: -215px;
+      right: -55px;
+      box-shadow: 0 0 0 42px var(--blue-soft), 0 0 0 43px var(--line);
+    }
+
+    .hero::after {
+      width: 180px;
+      height: 180px;
+      right: 105px;
+      bottom: -142px;
+      box-shadow: 0 0 0 28px var(--coral-soft), 0 0 0 29px var(--line);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 22px;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 22px;
+      height: 3px;
+      border-radius: 2px;
+      background: var(--coral);
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      max-width: 900px;
+      margin-bottom: 24px;
+      font-size: clamp(42px, 7vw, 82px);
+      line-height: 0.98;
+      letter-spacing: -0.065em;
+    }
+
+    .hero-lead {
+      max-width: 760px;
+      margin-bottom: 34px;
+      color: var(--ink-soft);
+      font-size: clamp(18px, 2.2vw, 24px);
+      line-height: 1.45;
+    }
+
+    .hero-lead strong {
+      color: var(--ink);
+    }
+
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .meta-chip,
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 5px 11px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: var(--surface);
+      font-size: 12px;
+      font-weight: 720;
+    }
+
+    .page-grid {
+      width: min(calc(100% - 32px), var(--content));
+      margin: 30px auto 90px;
+      display: grid;
+      grid-template-columns: 230px minmax(0, 1fr);
+      gap: 38px;
+      align-items: start;
+    }
+
+    .toc {
+      position: sticky;
+      top: 88px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+    }
+
+    .toc-label {
+      margin: 0 0 10px;
+      color: var(--ink-soft);
+      font-size: 11px;
+      font-weight: 850;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .toc ol {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .toc a {
+      display: block;
+      padding: 7px 8px;
+      border-radius: 8px;
+      color: var(--ink-soft);
+      font-size: 13px;
+      font-weight: 650;
+      text-decoration: none;
+      transition: color 150ms ease, background 150ms ease, transform 150ms ease;
+    }
+
+    .toc a:hover,
+    .toc a[aria-current="true"] {
+      transform: translateX(3px);
+      background: var(--blue-soft);
+      color: var(--blue-deep);
+    }
+
+    .report-content {
+      min-width: 0;
+    }
+
+    section {
+      scroll-margin-top: 88px;
+      margin-bottom: 76px;
+    }
+
+    .section-heading {
+      display: grid;
+      grid-template-columns: 54px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+      margin-bottom: 28px;
+    }
+
+    .section-number {
+      width: 48px;
+      height: 48px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--ink);
+      border-radius: 50%;
+      background: var(--coral-soft);
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 850;
+      box-shadow: 3px 3px 0 var(--ink);
+    }
+
+    h2 {
+      margin-bottom: 8px;
+      font-size: clamp(30px, 4vw, 47px);
+      line-height: 1.04;
+      letter-spacing: -0.045em;
+    }
+
+    .section-intro {
+      max-width: 720px;
+      margin: 0;
+      color: var(--ink-soft);
+      font-size: 18px;
+    }
+
+    h3 {
+      margin-bottom: 9px;
+      font-size: 20px;
+      line-height: 1.22;
+      letter-spacing: -0.025em;
+    }
+
+    .thesis-card {
+      position: relative;
+      padding: clamp(28px, 5vw, 52px);
+      border-radius: var(--radius-lg);
+      background: var(--ink);
+      color: var(--canvas);
+      overflow: hidden;
+    }
+
+    .thesis-card::after {
+      content: "NEXT";
+      position: absolute;
+      right: -14px;
+      bottom: -28px;
+      color: color-mix(in srgb, var(--canvas) 8%, transparent);
+      font-size: clamp(82px, 13vw, 154px);
+      font-weight: 900;
+      letter-spacing: -0.08em;
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    .thesis-card blockquote {
+      position: relative;
+      z-index: 1;
+      max-width: 760px;
+      margin: 0 0 28px;
+      font-size: clamp(26px, 4vw, 44px);
+      font-weight: 760;
+      line-height: 1.16;
+      letter-spacing: -0.04em;
+    }
+
+    .thesis-card p {
+      position: relative;
+      z-index: 1;
+      max-width: 690px;
+      margin-bottom: 0;
+      color: color-mix(in srgb, var(--canvas) 72%, transparent);
+    }
+
+    .journey {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--line);
+    }
+
+    .journey-step {
+      min-height: 190px;
+      padding: 22px;
+      background: var(--surface);
+    }
+
+    .journey-step strong {
+      display: block;
+      margin-bottom: 28px;
+      color: var(--coral);
+      font-size: 28px;
+      letter-spacing: -0.04em;
+    }
+
+    .journey-step p {
+      margin-bottom: 0;
+      color: var(--ink-soft);
+      font-size: 14px;
+    }
+
+    .principles,
+    .bet-grid,
+    .opportunity-grid,
+    .quality-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .principle,
+    .bet-card,
+    .opportunity,
+    .quality-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+      transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+    }
+
+    .principle:hover,
+    .bet-card:hover,
+    .opportunity:hover,
+    .quality-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--line-strong);
+      box-shadow: 0 12px 30px rgba(30, 36, 56, 0.08);
+    }
+
+    .principle {
+      padding: 24px;
+    }
+
+    .principle-index {
+      display: block;
+      margin-bottom: 18px;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: 0.12em;
+    }
+
+    .principle p,
+    .bet-card p,
+    .opportunity p,
+    .quality-card p {
+      margin-bottom: 0;
+      color: var(--ink-soft);
+      font-size: 14px;
+    }
+
+    .bet-card {
+      position: relative;
+      padding: 26px;
+      overflow: hidden;
+    }
+
+    .bet-card:first-child {
+      grid-column: 1 / -1;
+      border-color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .bet-card:first-child h3 {
+      font-size: 27px;
+    }
+
+    .card-topline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+
+    .bet-number {
+      color: var(--ink-soft);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+    }
+
+    .status-chip.high {
+      border-color: color-mix(in srgb, var(--mint) 60%, var(--line));
+      background: var(--mint-soft);
+      color: var(--mint);
+    }
+
+    .status-chip.medium {
+      border-color: color-mix(in srgb, var(--gold) 50%, var(--line));
+      background: var(--gold-soft);
+      color: var(--gold);
+    }
+
+    .feature-list {
+      margin: 18px 0 0;
+      padding: 0;
+      list-style: none;
+      color: var(--ink-soft);
+      font-size: 14px;
+    }
+
+    .feature-list li {
+      position: relative;
+      padding: 6px 0 6px 20px;
+    }
+
+    .feature-list li::before {
+      content: "";
+      position: absolute;
+      top: 15px;
+      left: 1px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--coral);
+    }
+
+    .phase-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 18px;
+      padding: 6px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--surface);
+    }
+
+    .phase-tab {
+      flex: 1 0 auto;
+      min-height: 42px;
+      padding: 8px 18px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--ink-soft);
+      cursor: pointer;
+      font-weight: 760;
+      transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+    }
+
+    .phase-tab:hover {
+      color: var(--ink);
+      transform: translateY(-1px);
+    }
+
+    .phase-tab[aria-selected="true"] {
+      background: var(--ink);
+      color: var(--canvas);
+    }
+
+    .phase-panel {
+      display: none;
+      padding: clamp(24px, 4vw, 38px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: var(--surface-strong);
+      animation: panel-in 220ms ease both;
+    }
+
+    .phase-panel.active {
+      display: block;
+    }
+
+    .phase-kicker {
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 850;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .phase-panel h3 {
+      margin-top: 8px;
+      font-size: clamp(25px, 3vw, 34px);
+    }
+
+    .phase-panel > p {
+      max-width: 700px;
+      color: var(--ink-soft);
+    }
+
+    .phase-items {
+      margin: 26px 0 0;
+      padding: 0;
+      counter-reset: phase;
+      list-style: none;
+    }
+
+    .phase-items li {
+      counter-increment: phase;
+      display: grid;
+      grid-template-columns: 36px minmax(0, 1fr);
+      gap: 12px;
+      padding: 13px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .phase-items li::before {
+      content: counter(phase, decimal-leading-zero);
+      color: var(--coral);
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    .opportunity {
+      padding: 24px;
+    }
+
+    .opportunity-label {
+      display: inline-block;
+      margin-bottom: 18px;
+      padding: 4px 9px;
+      border-radius: 7px;
+      background: var(--coral-soft);
+      color: var(--coral);
+      font-size: 11px;
+      font-weight: 850;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .opportunity:nth-child(3n + 2) .opportunity-label {
+      background: var(--blue-soft);
+      color: var(--blue);
+    }
+
+    .opportunity:nth-child(3n) .opportunity-label {
+      background: var(--mint-soft);
+      color: var(--mint);
+    }
+
+    .budget-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+    }
+
+    .budget-table th,
+    .budget-table td {
+      padding: 17px 20px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .budget-table tr:last-child th,
+    .budget-table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .budget-table th {
+      width: 42%;
+      color: var(--ink-soft);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .budget-table td {
+      color: var(--blue-deep);
+      font-size: 17px;
+      font-weight: 820;
+    }
+
+    .quality-card {
+      padding: 22px;
+    }
+
+    .quality-card h3 {
+      font-size: 17px;
+    }
+
+    .anti-goals {
+      padding: clamp(28px, 5vw, 48px);
+      border: 1px solid var(--line);
+      border-left: 7px solid var(--coral);
+      border-radius: var(--radius-md);
+      background: var(--surface);
+    }
+
+    .anti-goals ul {
+      margin: 20px 0 0;
+      padding-left: 22px;
+      color: var(--ink-soft);
+    }
+
+    .recommendation {
+      padding: clamp(30px, 5vw, 54px);
+      border-radius: var(--radius-lg);
+      background: var(--blue);
+      color: #fff;
+      box-shadow: var(--shadow);
+    }
+
+    .recommendation h2 {
+      max-width: 720px;
+    }
+
+    .recommendation > p {
+      max-width: 730px;
+      color: rgba(255, 255, 255, 0.76);
+      font-size: 18px;
+    }
+
+    .next-six {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin: 28px 0 0;
+      padding: 0;
+      counter-reset: next;
+      list-style: none;
+    }
+
+    .next-six li {
+      counter-increment: next;
+      display: grid;
+      grid-template-columns: 31px minmax(0, 1fr);
+      gap: 11px;
+      align-items: start;
+      padding: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.08);
+      font-weight: 700;
+    }
+
+    .next-six li::before {
+      content: counter(next);
+      width: 27px;
+      height: 27px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #fff;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    footer {
+      width: min(calc(100% - 32px), var(--content));
+      margin: 0 auto 40px;
+      padding-top: 24px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      gap: 20px;
+      color: var(--ink-soft);
+      font-size: 13px;
+    }
+
+    footer strong {
+      color: var(--ink);
+    }
+
+    @keyframes panel-in {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (max-width: 900px) {
+      .page-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .toc {
+        position: static;
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .toc ol {
+        display: flex;
+        gap: 4px;
+        overflow-x: auto;
+      }
+
+      .toc a {
+        white-space: nowrap;
+      }
+
+      .journey {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    @media (max-width: 620px) {
+      .brand span:last-child,
+      .print-label {
+        display: none;
+      }
+
+      .hero {
+        margin-top: 18px;
+        padding: 34px 25px 50px;
+      }
+
+      .hero::before {
+        opacity: 0.5;
+      }
+
+      .page-grid {
+        gap: 26px;
+        margin-top: 18px;
+      }
+
+      .journey,
+      .principles,
+      .bet-grid,
+      .opportunity-grid,
+      .quality-grid,
+      .next-six {
+        grid-template-columns: 1fr;
+      }
+
+      .bet-card:first-child {
+        grid-column: auto;
+      }
+
+      .section-heading {
+        grid-template-columns: 42px minmax(0, 1fr);
+      }
+
+      .section-number {
+        width: 38px;
+        height: 38px;
+        box-shadow: 2px 2px 0 var(--ink);
+      }
+
+      .budget-table th,
+      .budget-table td {
+        display: block;
+        width: 100%;
+        border-bottom: 0;
+      }
+
+      .budget-table th {
+        padding-bottom: 2px;
+      }
+
+      .budget-table td {
+        padding-top: 2px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      footer {
+        flex-direction: column;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html {
+        scroll-behavior: auto;
+      }
+
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    @media print {
+      :root {
+        --canvas: #fff;
+        --surface: #fff;
+        --surface-strong: #fff;
+        --ink: #152039;
+        --ink-soft: #4c5568;
+        --line: #d6d6d6;
+      }
+
+      .utility-bar,
+      .reading-progress,
+      .toc,
+      .phase-tabs {
+        display: none !important;
+      }
+
+      body {
+        background: #fff;
+        font-size: 10pt;
+      }
+
+      .hero,
+      .page-grid,
+      footer {
+        width: 100%;
+        margin-left: 0;
+        margin-right: 0;
+      }
+
+      .hero {
+        margin-top: 0;
+        padding: 32px;
+        box-shadow: none;
+      }
+
+      .page-grid {
+        display: block;
+      }
+
+      section {
+        margin-bottom: 38px;
+        break-inside: avoid;
+      }
+
+      .phase-panel {
+        display: block;
+        margin-bottom: 12px;
+        animation: none;
+      }
+
+      .principle,
+      .bet-card,
+      .opportunity,
+      .quality-card,
+      .recommendation {
+        break-inside: avoid;
+        box-shadow: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="reading-progress" aria-hidden="true"><span id="reading-progress"></span></div>
+
+  <header class="utility-bar">
+    <div class="utility-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">QF</span>
+        <span>Quick Folders / Product Direction</span>
+      </div>
+      <div class="utility-actions">
+        <button class="utility-button" id="theme-toggle" type="button" aria-label="Switch color theme">Dark mode</button>
+        <button class="utility-button" type="button" onclick="window.print()" aria-label="Print this report">Print <span class="print-label">report</span></button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <header class="hero">
+      <p class="eyebrow">Product direction · September 2026</p>
+      <h1>The local video inbox.</h1>
+      <p class="hero-lead">A roadmap for making Quick Folders the <strong>fastest path from a folder full of local media to deciding what to watch next.</strong></p>
+      <div class="hero-meta" aria-label="Report themes">
+        <span class="meta-chip">Local-first</span>
+        <span class="meta-chip">Keyboard-friendly</span>
+        <span class="meta-chip">Playback-aware</span>
+        <span class="meta-chip">Fast at scale</span>
+      </div>
+    </header>
+
+    <div class="page-grid">
+      <nav class="toc" aria-label="Report sections">
+        <p class="toc-label">In this report</p>
+        <ol>
+          <li><a href="#north-star">North star</a></li>
+          <li><a href="#principles">Principles</a></li>
+          <li><a href="#bets">Product bets</a></li>
+          <li><a href="#roadmap">Roadmap</a></li>
+          <li><a href="#opportunities">Opportunities</a></li>
+          <li><a href="#performance">Performance</a></li>
+          <li><a href="#quality">Quality system</a></li>
+          <li><a href="#boundaries">Boundaries</a></li>
+          <li><a href="#recommendation">Recommendation</a></li>
+        </ol>
+      </nav>
+
+      <article class="report-content">
+        <section id="north-star">
+          <div class="section-heading">
+            <span class="section-number">01</span>
+            <div>
+              <h2>North star experience</h2>
+              <p class="section-intro">Quick Folders should preserve momentum from opening the window through finishing a viewing session.</p>
+            </div>
+          </div>
+
+          <div class="thesis-card">
+            <blockquote>Open. Understand what is available. Pick something in seconds. Resume naturally. Flow into what comes next.</blockquote>
+            <p>The product wins by removing decisions and repeated setup—not by becoming another traditional media library manager.</p>
+          </div>
+
+          <div class="journey" aria-label="Target viewing journey">
+            <div class="journey-step">
+              <strong>&lt;150 ms</strong>
+              <h3>Open instantly</h3>
+              <p>Show the last cached view immediately while refreshing in the background.</p>
+            </div>
+            <div class="journey-step">
+              <strong>&lt;5 sec</strong>
+              <h3>Choose confidently</h3>
+              <p>Use progress, duration, previews, and smart views to reduce uncertainty.</p>
+            </div>
+            <div class="journey-step">
+              <strong>1 action</strong>
+              <h3>Start or resume</h3>
+              <p>Play immediately at the last position without extra navigation or setup.</p>
+            </div>
+            <div class="journey-step">
+              <strong>0 friction</strong>
+              <h3>Keep watching</h3>
+              <p>Offer the next useful item through a lightweight, persistent queue.</p>
+            </div>
+          </div>
+        </section>
+
+        <section id="principles">
+          <div class="section-heading">
+            <span class="section-number">02</span>
+            <div>
+              <h2>Product principles</h2>
+              <p class="section-intro">The constraints that keep the experience simple as its capability grows.</p>
+            </div>
+          </div>
+
+          <div class="principles">
+            <article class="principle">
+              <span class="principle-index">PRINCIPLE 01</span>
+              <h3>Instant by default</h3>
+              <p>Cached content appears immediately. Indexing, thumbnails, and metadata never block the first useful interaction.</p>
+            </article>
+            <article class="principle">
+              <span class="principle-index">PRINCIPLE 02</span>
+              <h3>Power without clutter</h3>
+              <p>Advanced actions emerge through context, search syntax, shortcuts, and a command palette rather than permanent chrome.</p>
+            </article>
+            <article class="principle">
+              <span class="principle-index">PRINCIPLE 03</span>
+              <h3>Preserve momentum</h3>
+              <p>Playing, triaging, queuing, and marking watched should rarely require a dialog or lose the current position.</p>
+            </article>
+            <article class="principle">
+              <span class="principle-index">PRINCIPLE 04</span>
+              <h3>Stable and calm</h3>
+              <p>No layout jumps, thumbnail flicker, surprise selection changes, or animation that delays meaningful input.</p>
+            </article>
+            <article class="principle">
+              <span class="principle-index">PRINCIPLE 05</span>
+              <h3>Local-first and private</h3>
+              <p>No account, telemetry, or network dependency. Optional online enrichment must be explicit and narrowly permissioned.</p>
+            </article>
+            <article class="principle">
+              <span class="principle-index">PRINCIPLE 06</span>
+              <h3>Opinionated defaults</h3>
+              <p>A useful experience works immediately. Customization exists for genuine workflow differences, not every stylistic detail.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="bets">
+          <div class="section-heading">
+            <span class="section-number">03</span>
+            <div>
+              <h2>Highest-impact product bets</h2>
+              <p class="section-intro">The capabilities most likely to transform a good file browser into a daily viewing companion.</p>
+            </div>
+          </div>
+
+          <div class="bet-grid">
+            <article class="bet-card">
+              <div class="card-topline"><span class="bet-number">BET 01</span><span class="status-chip high">Highest leverage</span></div>
+              <h3>Real playback progress and resuming</h3>
+              <p>Replace the binary watched model with a useful viewing state: New, In Progress, and Watched.</p>
+              <ul class="feature-list">
+                <li>Resume at the last playback position</li>
+                <li>Show unobtrusive progress and time remaining</li>
+                <li>Automatically mark watched at a configurable threshold</li>
+                <li>Preserve explicit manual overrides</li>
+                <li>Power a prominent Continue Watching view</li>
+              </ul>
+            </article>
+
+            <article class="bet-card">
+              <div class="card-topline"><span class="bet-number">BET 02</span><span class="status-chip high">Core loop</span></div>
+              <h3>A lightweight Up Next queue</h3>
+              <p>Make one-click Play Next and Add to Queue persistent across sessions, reorderable, and available from both the browser and IINA menu.</p>
+              <ul class="feature-list">
+                <li>Play a folder in order or shuffle unwatched</li>
+                <li>Advance when playback completes</li>
+                <li>Undo accidental queue changes</li>
+              </ul>
+            </article>
+
+            <article class="bet-card">
+              <div class="card-topline"><span class="bet-number">BET 03</span><span class="status-chip high">Daily speed</span></div>
+              <h3>Keyboard-first triage</h3>
+              <p>Turn a folder of new files into a rapid inbox: navigate, preview, queue, mark watched, hide, or delete without losing focus.</p>
+              <ul class="feature-list">
+                <li>J/K or arrow navigation</li>
+                <li>Space to preview; Enter to play</li>
+                <li>Automatic advance after triage actions</li>
+              </ul>
+            </article>
+
+            <article class="bet-card">
+              <div class="card-topline"><span class="bet-number">BET 04</span><span class="status-chip medium">Discovery</span></div>
+              <h3>Purposeful smart views</h3>
+              <p>Continue Watching, New, Recently Added, Up Next, Recently Played, and duration-based views answer common questions immediately.</p>
+            </article>
+
+            <article class="bet-card">
+              <div class="card-topline"><span class="bet-number">BET 05</span><span class="status-chip medium">Visual choice</span></div>
+              <h3>Complementary list and grid views</h3>
+              <p>Keep the compact list for high-density triage and add a poster grid for visually choosing what to watch.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="roadmap">
+          <div class="section-heading">
+            <span class="section-number">04</span>
+            <div>
+              <h2>Three-phase roadmap</h2>
+              <p class="section-intro">Sequence the work so each phase strengthens the primary viewing loop before broadening the product.</p>
+            </div>
+          </div>
+
+          <div class="phase-tabs" role="tablist" aria-label="Roadmap phases">
+            <button class="phase-tab" id="phase-1-tab" type="button" role="tab" aria-selected="true" aria-controls="phase-1">Phase 1 · Core loop</button>
+            <button class="phase-tab" id="phase-2-tab" type="button" role="tab" aria-selected="false" aria-controls="phase-2" tabindex="-1">Phase 2 · Discovery</button>
+            <button class="phase-tab" id="phase-3-tab" type="button" role="tab" aria-selected="false" aria-controls="phase-3" tabindex="-1">Phase 3 · Series</button>
+          </div>
+
+          <div class="phase-panel active" id="phase-1" role="tabpanel" aria-labelledby="phase-1-tab">
+            <span class="phase-kicker">Phase 1</span>
+            <h3>Perfect the core loop</h3>
+            <p>Create a compelling reason to use Quick Folders every day before adding broader organization features.</p>
+            <ol class="phase-items">
+              <li>Playback progress, resuming, and automatic watched thresholds</li>
+              <li>Continue Watching as the first smart view</li>
+              <li>A persistent, lightweight Up Next queue</li>
+              <li>Keyboard-first triage with stable focus and selection</li>
+              <li>Recently Added and Unwatched views</li>
+              <li>Cached startup with explicit performance measurement</li>
+            </ol>
+          </div>
+
+          <div class="phase-panel" id="phase-2" role="tabpanel" aria-labelledby="phase-2-tab" hidden>
+            <span class="phase-kicker">Phase 2</span>
+            <h3>Make discovery delightful</h3>
+            <p>Improve visual confidence and surface sophisticated actions without weighing down the primary interface.</p>
+            <ol class="phase-items">
+              <li>List and poster-grid layouts with consistent thumbnail geometry</li>
+              <li>Progress overlays, calm placeholders, and optional frame previews</li>
+              <li>A context-aware command palette</li>
+              <li>Structured search suggestions and saved smart views</li>
+              <li>Progressively disclosed technical metadata</li>
+              <li>Context menus and undoable non-destructive actions</li>
+            </ol>
+          </div>
+
+          <div class="phase-panel" id="phase-3" role="tabpanel" aria-labelledby="phase-3-tab" hidden>
+            <span class="phase-kicker">Phase 3</span>
+            <h3>Own local episodic viewing</h3>
+            <p>Use filename and folder conventions to make episodic libraries effortless without requiring a media-server setup.</p>
+            <ol class="phase-items">
+              <li>Conservative season and episode recognition</li>
+              <li>Expandable series groups and natural episode ordering</li>
+              <li>Next-unwatched episode recommendations</li>
+              <li>Continue Series and optional queue auto-advance</li>
+              <li>Duplicate and unplayable-file diagnostics</li>
+              <li>Optional advanced library-management tools</li>
+            </ol>
+          </div>
+        </section>
+
+        <section id="opportunities">
+          <div class="section-heading">
+            <span class="section-number">05</span>
+            <div>
+              <h2>Experience opportunities</h2>
+              <p class="section-intro">A broader idea bank, organized around user outcomes rather than isolated features.</p>
+            </div>
+          </div>
+
+          <div class="opportunity-grid">
+            <article class="opportunity">
+              <span class="opportunity-label">Find</span>
+              <h3>Structured search</h3>
+              <p>Add optional queries such as <code>duration:&lt;20m</code>, <code>is:progress</code>, <code>resolution:4k</code>, and <code>added:this-week</code>, with suggestions and clickable filter chips.</p>
+            </article>
+            <article class="opportunity">
+              <span class="opportunity-label">Act</span>
+              <h3>Command palette</h3>
+              <p>Use ⌘K to jump to folders, switch views, change filters, run selection actions, discover shortcuts, and open settings.</p>
+            </article>
+            <article class="opportunity">
+              <span class="opportunity-label">Organize</span>
+              <h3>Saved smart collections</h3>
+              <p>Save searches such as “unwatched documentaries under 45 minutes” without moving or duplicating files.</p>
+            </article>
+            <article class="opportunity">
+              <span class="opportunity-label">Browse</span>
+              <h3>Fast spatial navigation</h3>
+              <p>Restore folder, selection, scroll, query, and layout; add sibling-folder breadcrumb menus, recent locations, and mouse back/forward support.</p>
+            </article>
+            <article class="opportunity">
+              <span class="opportunity-label">Understand</span>
+              <h3>Local media intelligence</h3>
+              <p>Reveal codec, bitrate, frame rate, HDR, audio channels, and subtitle availability only when useful—not as default visual noise.</p>
+            </article>
+            <article class="opportunity">
+              <span class="opportunity-label">Recover</span>
+              <h3>Undo and actionable errors</h3>
+              <p>Use undo toasts for reversible actions and errors that offer a direct recovery path, such as locating an unavailable folder.</p>
+            </article>
+            <article class="opportunity">
+              <span class="opportunity-label">Preview</span>
+              <h3>Confident visual choice</h3>
+              <p>Use stable aspect-ratio frames, dominant-color placeholders, progress overlays, and optional contact-sheet hover previews.</p>
+            </article>
+            <article class="opportunity">
+              <span class="opportunity-label">Integrate</span>
+              <h3>Native file workflows</h3>
+              <p>Add Reveal in Finder, Copy Path, drag-in folder setup, outbound drag, configurable click behavior, and consistent contextual menus.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="performance">
+          <div class="section-heading">
+            <span class="section-number">06</span>
+            <div>
+              <h2>Performance is a feature</h2>
+              <p class="section-intro">World-class polish requires budgets that can be measured and protected as libraries grow.</p>
+            </div>
+          </div>
+
+          <table class="budget-table">
+            <tbody>
+              <tr><th scope="row">Cached window becomes usable</th><td>Under 150 ms</td></tr>
+              <tr><th scope="row">Search or filter feedback</th><td>Under 50 ms</td></tr>
+              <tr><th scope="row">Keyboard action feedback</th><td>Within one frame</td></tr>
+              <tr><th scope="row">Scrolling target</th><td>Stable 60 fps</td></tr>
+              <tr><th scope="row">Single-item state update</th><td>No full-list rerender</td></tr>
+              <tr><th scope="row">Benchmark library sizes</th><td>1K · 10K · 100K files</td></tr>
+            </tbody>
+          </table>
+
+          <ul class="feature-list">
+            <li>Apply index changes as diffs so rows retain identity, focus, and selection.</li>
+            <li>Virtualize large lists and grids while preserving keyboard navigation.</li>
+            <li>Prioritize visible thumbnails and metadata; cancel work that leaves the viewport.</li>
+            <li>Deduplicate jobs and bound both memory and disk caches.</li>
+            <li>Move expensive search preparation to index time and keep background scans off the interaction path.</li>
+          </ul>
+        </section>
+
+        <section id="quality">
+          <div class="section-heading">
+            <span class="section-number">07</span>
+            <div>
+              <h2>Quality system</h2>
+              <p class="section-intro">Protect the product’s calm, reliable feel with automated checks that mirror real user conditions.</p>
+            </div>
+          </div>
+
+          <div class="quality-grid">
+            <article class="quality-card"><h3>Visual baselines</h3><p>Screenshot comparisons for light, dark, compact, loading, empty, selection, and modal states.</p></article>
+            <article class="quality-card"><h3>Keyboard contracts</h3><p>Regression coverage for focus order, shortcut conflicts, selection anchors, dialogs, and restoration.</p></article>
+            <article class="quality-card"><h3>Scale benchmarks</h3><p>Synthetic libraries that detect startup, filtering, scrolling, cache, and memory regressions.</p></article>
+            <article class="quality-card"><h3>State migrations</h3><p>Tests for interrupted indexing, older persisted schemas, missing folders, and partially available metadata.</p></article>
+            <article class="quality-card"><h3>Accessibility</h3><p>Automated names, roles, contrast, motion preferences, keyboard reachability, and focus visibility.</p></article>
+            <article class="quality-card"><h3>Diagnostics</h3><p>A private local debug panel for index state, pending jobs, cache size, and recent recoverable errors.</p></article>
+          </div>
+        </section>
+
+        <section id="boundaries">
+          <div class="section-heading">
+            <span class="section-number">08</span>
+            <div>
+              <h2>Strategic boundaries</h2>
+              <p class="section-intro">A clear identity makes prioritization easier and prevents sophisticated features from creating a bloated product.</p>
+            </div>
+          </div>
+
+          <div class="anti-goals">
+            <h3>Quick Folders is not trying to become…</h3>
+            <ul>
+              <li>A server, streaming service, or multi-user media platform.</li>
+              <li>A metadata-heavy replacement for Finder or a full media catalog.</li>
+              <li>An account-driven recommendation engine.</li>
+              <li>A screen dominated by permanent controls for every available action.</li>
+              <li>A tool that forces users to reorganize files before it becomes useful.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="recommendation" id="recommendation">
+          <p class="eyebrow" style="color: #fff;">Recommended next move</p>
+          <h2>Build the viewing loop before broadening the library.</h2>
+          <p>Treat playback progress as the foundation. It makes Continue Watching, automatic watched state, Up Next, triage, and episodic recommendations materially more useful.</p>
+          <ol class="next-six">
+            <li>Playback progress data model</li>
+            <li>Resume and completion events</li>
+            <li>Continue Watching view</li>
+            <li>Persistent Up Next queue</li>
+            <li>Keyboard triage flow</li>
+            <li>Performance instrumentation</li>
+          </ol>
+        </section>
+      </article>
+    </div>
+  </main>
+
+  <footer>
+    <span><strong>Quick Folders</strong> product direction</span>
+    <span>Local media, without the library-manager overhead.</span>
+  </footer>
+
+  <script>
+    const root = document.documentElement;
+    const themeToggle = document.querySelector("#theme-toggle");
+    const phaseTabs = Array.from(document.querySelectorAll("[role='tab']"));
+    const phasePanels = Array.from(document.querySelectorAll("[role='tabpanel']"));
+    const tocLinks = Array.from(document.querySelectorAll(".toc a"));
+    const sections = tocLinks.map((link) => document.querySelector(link.hash)).filter(Boolean);
+    const readingProgress = document.querySelector("#reading-progress");
+
+    function setTheme(theme) {
+      root.dataset.theme = theme;
+      themeToggle.textContent = theme === "dark" ? "Light mode" : "Dark mode";
+      themeToggle.setAttribute("aria-label", `Switch to ${theme === "dark" ? "light" : "dark"} mode`);
+    }
+
+    const preferredTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    setTheme(preferredTheme);
+
+    themeToggle.addEventListener("click", () => {
+      setTheme(root.dataset.theme === "dark" ? "light" : "dark");
+    });
+
+    function activatePhase(tab) {
+      phaseTabs.forEach((candidate) => {
+        const isActive = candidate === tab;
+        candidate.setAttribute("aria-selected", String(isActive));
+        candidate.tabIndex = isActive ? 0 : -1;
+      });
+
+      phasePanels.forEach((panel) => {
+        const isActive = panel.id === tab.getAttribute("aria-controls");
+        panel.hidden = !isActive;
+        panel.classList.toggle("active", isActive);
+      });
+    }
+
+    phaseTabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => activatePhase(tab));
+      tab.addEventListener("keydown", (event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        let nextIndex = index;
+        if (event.key === "ArrowLeft") nextIndex = (index - 1 + phaseTabs.length) % phaseTabs.length;
+        if (event.key === "ArrowRight") nextIndex = (index + 1) % phaseTabs.length;
+        if (event.key === "Home") nextIndex = 0;
+        if (event.key === "End") nextIndex = phaseTabs.length - 1;
+        activatePhase(phaseTabs[nextIndex]);
+        phaseTabs[nextIndex].focus();
+      });
+    });
+
+    function updateScrollState() {
+      const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+      const progress = scrollable > 0 ? (window.scrollY / scrollable) * 100 : 0;
+      readingProgress.style.width = `${Math.min(100, Math.max(0, progress))}%`;
+
+      const current = [...sections].reverse().find((section) => section.getBoundingClientRect().top <= 130) || sections[0];
+      tocLinks.forEach((link) => link.setAttribute("aria-current", String(link.hash === `#${current.id}`)));
+    }
+
+    document.addEventListener("scroll", updateScrollState, { passive: true });
+    window.addEventListener("resize", updateScrollState);
+    updateScrollState();
+  </script>
+</body>
+</html>
