@@ -24,6 +24,7 @@
       </div>
     </div>
 
+    <div id="app-shell" class="app-shell">
     <main class="pane">
       <header class="nav-bar">
         <button class="back-btn hidden" id="back-btn" type="button" title="Go back" aria-label="Go back">
@@ -54,6 +55,7 @@
       <div id="action-bar" class="action-bar hidden" aria-live="polite">
         <span id="selection-count" class="selection-count">0 selected</span>
         <div class="action-buttons">
+          <button id="queue-selection-btn" class="action-btn queue-action" type="button">Queue</button>
           <button id="watch-btn" class="action-btn watch-action" type="button">Mark Watched</button>
           <button id="delete-btn" class="action-btn delete-action" type="button">Delete</button>
           <button id="cancel-selection-btn" class="action-btn cancel-action" type="button" title="Clear selection (Escape)" aria-label="Clear selection">×</button>
@@ -87,6 +89,13 @@
               <path d="M2 2L10 10M10 2L2 10" stroke="currentColor"/>
             </svg>
           </button>
+          <button id="queue-bucket" class="queue-bucket" type="button" title="Queue is empty — drop media here" aria-label="Queue is empty — drop media here" aria-controls="queue-panel" aria-expanded="false">
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M5 5.5h8M5 10h8M5 14.5h5" />
+              <path d="M15 12v5m-2.5-2.5L15 17l2.5-2.5" />
+            </svg>
+            <span id="queue-badge" class="queue-badge hidden">0</span>
+          </button>
           <select id="filter-dropdown" class="filter-dropdown" aria-label="Filter by file type">
             <option value="all">All Files</option>
             <optgroup id="video-group" label="Video"></optgroup>
@@ -97,6 +106,31 @@
         </div>
       </footer>
     </main>
+    <aside id="queue-panel" class="queue-panel hidden" aria-labelledby="queue-title">
+      <header class="queue-header">
+        <div>
+          <span class="queue-eyebrow">Up next</span>
+          <h2 id="queue-title">Queue</h2>
+        </div>
+        <div class="queue-header-actions">
+          <button id="queue-clear-btn" class="queue-text-btn" type="button">Clear</button>
+          <button id="queue-close-btn" class="queue-close-btn" type="button" title="Close queue" aria-label="Close queue">×</button>
+        </div>
+      </header>
+      <div class="queue-toolbar">
+        <span id="queue-count" aria-live="polite">0 items</span>
+        <button id="queue-remove-selected-btn" class="queue-text-btn hidden" type="button">Remove 0</button>
+      </div>
+      <section id="queue-list" class="queue-list" role="listbox" aria-label="Queued media" aria-multiselectable="true"></section>
+      <footer class="queue-footer">
+        <p>Plays in this order using IINA’s playlist.</p>
+        <button id="queue-play-btn" class="queue-play-btn" type="button" disabled>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3.5v9l7-4.5z" /></svg>
+          Watch Queue
+        </button>
+      </footer>
+    </aside>
+    </div>
     <div id="delete-modal" class="confirm-modal hidden" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
       <div class="confirm-card">
         <div class="confirm-icon" aria-hidden="true">!</div>
@@ -147,6 +181,8 @@
               <div class="shortcut-row"><dt><kbd>⌘/Ctrl A</kbd></dt><dd>Select all visible files</dd></div>
               <div class="shortcut-row"><dt><kbd>Space</kbd></dt><dd>Toggle the focused file</dd></div>
               <div class="shortcut-row"><dt><kbd>Shift ↑</kbd> <kbd>Shift ↓</kbd></dt><dd>Extend selection</dd></div>
+              <div class="shortcut-row"><dt><kbd>Drag</kbd></dt><dd>Add one or more selected items to the queue</dd></div>
+              <div class="shortcut-row"><dt><kbd>Q</kbd></dt><dd>Add selected items to the queue</dd></div>
               <div class="shortcut-row"><dt><kbd>⌘/Ctrl Click</kbd></dt><dd>Toggle one file</dd></div>
               <div class="shortcut-row"><dt><kbd>Shift Click</kbd></dt><dd>Select a range</dd></div>
               <div class="shortcut-row"><dt><kbd>W</kbd></dt><dd>Mark watched or unwatched</dd></div>
@@ -160,6 +196,7 @@
     <script src="../file-types.js"></script>
     <script src="../browse-state.js"></script>
     <script src="../media-metadata.js"></script>
+    <script src="../queue-state.js"></script>
     <script src="messaging.js"></script>
     <script src="search.js"></script>
     <script src="browse-model.js"></script>
@@ -169,6 +206,7 @@
     <script src="media-preview.js"></script>
     <script src="dialog-controller.js"></script>
     <script src="item-view.js"></script>
+    <script src="queue-controller.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

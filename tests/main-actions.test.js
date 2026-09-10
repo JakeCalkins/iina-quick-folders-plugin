@@ -15,6 +15,7 @@ test("main entry persists watched state and permanently deletes only validated f
       ],
     },
     watchedPaths: [],
+    queuePaths: ["/media/b.mkv", "/outside/ignored.mov"],
     version: 2,
   });
   const handlers = new Map();
@@ -24,6 +25,9 @@ test("main entry persists watched state and permanently deletes only validated f
   const openedPaths = [];
   const executedTools = [];
   const menuItems = new Map();
+  const windowFrames = [];
+  let queuePlaylistPath = null;
+  let playedPlaylistIndex = null;
   let mediaListCalls = 0;
 
   const fileApi = {
@@ -37,6 +41,10 @@ test("main entry persists watched state and permanently deletes only validated f
     },
     write(path, content) {
       if (path === statePath) persistedState = content;
+      if (path.startsWith("@tmp/quick-folders-queue-")) {
+        queuePlaylistPath = path;
+        fileApi.queuePlaylist = content;
+      }
     },
     list(path, options) {
       if (path === "/media" && options === undefined) mediaListCalls++;
@@ -60,11 +68,27 @@ test("main entry persists watched state and permanently deletes only validated f
 
   global.iina = {
     console: { error() {}, log() {} },
-    core: { open(path) { openedPaths.push(path); } },
+    core: {
+      open(path) {
+        openedPaths.push(path);
+      },
+    },
+    playlist: {
+      list() {
+        if (!fileApi.queuePlaylist) return [];
+        return fileApi.queuePlaylist.trim().split("\n").slice(1).map((url) => ({
+          filename: decodeURIComponent(url.slice("file://".length)),
+        }));
+      },
+      play(index) { playedPlaylistIndex = index; },
+    },
     file: fileApi,
     utils: {
       fileInPath(path) {
         return path === "/usr/bin/mdls" || path === "/opt/homebrew/bin/ffprobe";
+      },
+      resolvePath(path) {
+        return path.startsWith("@tmp/quick-folders-queue-") ? `/tmp/${path.slice("@tmp/".length)}` : path;
       },
       async exec(path) {
         executedTools.push(path);
@@ -104,9 +128,10 @@ test("main entry persists watched state and permanently deletes only validated f
     },
     standaloneWindow: {
       setProperty() {},
-      setFrame() {},
+      setFrame(...frame) { windowFrames.push(frame); },
       loadFile() {},
       open() {},
+      close() {},
       postMessage(type, data) { messages.push({ type, data }); },
       onMessage(type, callback) { handlers.set(type, callback); },
     },
@@ -126,6 +151,32 @@ test("main entry persists watched state and permanently deletes only validated f
     const initialUpdate = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.equal(initialUpdate.atRoot, true);
     assert.equal(initialUpdate.items.at(-1).isWatchedRoot, true);
+    assert.deepEqual(initialUpdate.queueItems.map((item) => item.path), ["/media/b.mkv"]);
+
+    handlers.get("queue-add")({
+      paths: ["/media/a.mp4", "/media/b.mkv", "/outside/movie.mp4"],
+    });
+    const queueAddResult = messages.filter((message) => message.type === "queue-action-result").at(-1).data;
+    assert.deepEqual(queueAddResult.succeeded, ["/media/a.mp4"]);
+    assert.equal(queueAddResult.failed.length, 1);
+    assert.deepEqual(JSON.parse(persistedState).queuePaths, ["/media/b.mkv", "/media/a.mp4"]);
+
+    handlers.get("queue-reorder")({
+      paths: ["/media/a.mp4"],
+      targetPath: "/media/b.mkv",
+      position: "before",
+    });
+    await handlers.get("queue-play")();
+    assert.equal(fileApi.queuePlaylist, "#EXTM3U\nfile:///media/a.mp4\nfile:///media/b.mkv\n");
+    assert.match(queuePlaylistPath, /^@tmp\/quick-folders-queue-\d+\.m3u8$/);
+    assert.deepEqual(openedPaths, [`/tmp/${queuePlaylistPath.slice("@tmp/".length)}`]);
+    assert.equal(playedPlaylistIndex, 0);
+
+    handlers.get("queue-remove")({ paths: ["/media/b.mkv"] });
+    assert.deepEqual(JSON.parse(persistedState).queuePaths, ["/media/a.mp4"]);
+    handlers.get("queue-panel-open")({ open: true });
+    handlers.get("queue-panel-open")({ open: false });
+    assert.deepEqual(windowFrames.slice(-2), [[840, 600, null, null], [500, 600, null, null]]);
 
     handlers.get("set-watched")({
       paths: ["/media/a.mp4", "/media/a.mp4", "/media/../secret.mp4", "/media/folder.mp4"],
@@ -165,7 +216,7 @@ test("main entry persists watched state and permanently deletes only validated f
 
     handlers.get("open-item")({ path: "/outside/movie.mp4", isDir: false });
     handlers.get("open-item")({ path: "/media/b.mkv", isDir: false });
-    assert.deepEqual(openedPaths, ["/media/b.mkv"]);
+    assert.deepEqual(openedPaths, [`/tmp/${queuePlaylistPath.slice("@tmp/".length)}`, "/media/b.mkv"]);
 
     handlers.get("request-media-metadata")({ path: "/media/b.mkv" });
     await new Promise((resolve) => realSetTimeout(resolve, 0));
@@ -199,6 +250,7 @@ test("main entry persists watched state and permanently deletes only validated f
 
     const finalState = JSON.parse(persistedState);
     assert.deepEqual(finalState.watchedPaths, []);
+    assert.deepEqual(finalState.queuePaths, []);
     assert.deepEqual(finalState.fileIndex.files.map((item) => item.path), [
       "/media/b.mkv",
       "/media/failure.mov",

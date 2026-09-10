@@ -111,7 +111,8 @@ const QuickFoldersItemView = (() => {
       : `${QuickFoldersView.getDisplayName(item)}, ${isSelected ? "selected" : "not selected"}`);
     row.title = item.isDir
       ? "Open folder"
-      : "Open file. Hold Command, Control, or Shift to select.";
+      : "Open file, or drag to the queue. Hold Command, Control, or Shift to select.";
+    row.draggable = !item.isDir && !options.isIndexing;
     row.tabIndex = !options.isIndexing && options.focusedPath === item.path ? 0 : -1;
     row.classList.toggle("watched", Boolean(item.watched));
     row.classList.toggle("selected", isSelected);
@@ -144,6 +145,20 @@ const QuickFoldersItemView = (() => {
         }
       });
       row.addEventListener("focus", () => options.onFocusItem(item));
+      if (!item.isDir && options.onDragFiles) {
+        row.addEventListener("dragstart", (event) => {
+          const paths = options.onDragFiles(item, event);
+          if (!paths || paths.length === 0) {
+            event.preventDefault();
+            return;
+          }
+          row.classList.add("dragging");
+        });
+        row.addEventListener("dragend", () => {
+          row.classList.remove("dragging");
+          if (options.onDragEnd) options.onDragEnd(item);
+        });
+      }
       row.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
           event.preventDefault();

@@ -1,7 +1,9 @@
-const { console, core, file, utils, menu, standaloneWindow, preferences } = iina;
+const { console, core, file, utils, menu, playlist, standaloneWindow, preferences } = iina;
 const BrowseState = require("./browse-state.js");
 const FileTypes = require("./file-types.js");
 const MediaMetadata = require("./media-metadata.js");
+const QueuePlayback = require("./queue-playback.js");
+const QueueState = require("./queue-state.js");
 const ThumbnailService = require("./thumbnail-service.js");
 const KeyboardShortcuts = require("./ui/keyboard-shortcuts.js");
 const { createAsyncResourceLoader } = require("./async-resource-loader.js");
@@ -30,6 +32,9 @@ const DEBUG_FLUSH_DELAY = 250;
 
 const MAX_CONCURRENT_METADATA_JOBS = 3;
 const MAX_MEDIA_METADATA_IN_MEMORY = 500;
+const BROWSER_WINDOW_WIDTH = 500;
+const QUEUE_WINDOW_WIDTH = 840;
+const WINDOW_HEIGHT = 600;
 
 function isPathInFolderRoots(path) {
   return BrowseState.isPathWithinRoots(path, folderRoots);
@@ -134,6 +139,8 @@ const mediaMetadataLoader = createAsyncResourceLoader({
   load: readMediaMetadata,
   deliver: postMediaMetadata,
 });
+
+const queuePlayback = QueuePlayback.create({ core, file, playlist, utils });
 
 function requestThumbnail(path) {
   thumbnailLoader.request(path);
@@ -250,6 +257,7 @@ let folderRoots = [];
 let currentPath = null;
 let history = [];
 let watchedPaths = new Set();
+let queuePaths = [];
 let viewingWatched = false;
 
 let fileIndex = { extensions: new Set(), files: [] };
@@ -371,7 +379,8 @@ function saveState() {
         files: fileIndex.files,
       },
       watchedPaths: Array.from(watchedPaths),
-      version: 2,
+      queuePaths,
+      version: 3,
     };
     const json = JSON.stringify(state, null, 2);
     file.write(STATE_FILE, json);
@@ -390,6 +399,7 @@ function loadState() {
         if (state.folderRoots && Array.isArray(state.folderRoots)) {
           folderRoots = state.folderRoots;
           watchedPaths = new Set(BrowseState.normalizePaths(state.watchedPaths));
+          queuePaths = QueueState.normalizePaths(state.queuePaths).filter(isValidMediaPath);
           if (state.fileIndex && state.fileIndex.extensions) {
             fileIndex.extensions = new Set(state.fileIndex.extensions);
             fileIndex.files = state.fileIndex.files || [];
@@ -521,6 +531,11 @@ function getWatchedItems() {
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
+function getQueueItems() {
+  const directoryCache = new Map();
+  return queuePaths.map((path) => getFileItem(path, directoryCache)).filter(Boolean);
+}
+
 function getCurrentItems() {
   logDebug("get-current-items", { currentPath });
   if (viewingWatched) return getWatchedItems();
@@ -613,6 +628,7 @@ function updateWindow() {
     isIndexing,
     folderDepth: getCurrentFolderDepth(),
     preferences: preferenceSnapshot,
+    queueItems: getQueueItems(),
   });
 }
 
@@ -660,6 +676,7 @@ function deleteItems(paths) {
       file.delete(path);
       if (file.exists(path)) throw new Error("The file still exists after deletion");
       watchedPaths.delete(path);
+      queuePaths = QueueState.removePaths(queuePaths, [path]);
       thumbnailLoader.remove(path);
       mediaMetadataLoader.remove(path);
       succeeded.push(path);
@@ -681,6 +698,91 @@ function deleteItems(paths) {
     succeeded,
     failed,
   });
+}
+
+function postQueueResult(action, succeeded = [], failed = []) {
+  standaloneWindow.postMessage("queue-action-result", { action, succeeded, failed });
+}
+
+function addQueueItems({ paths } = {}) {
+  const requested = QueueState.normalizePaths(paths);
+  const existing = new Set(queuePaths);
+  const directoryCache = new Map();
+  const valid = [];
+  const failed = [];
+  requested.forEach((path) => {
+    if (!getFileItem(path, directoryCache)) {
+      failed.push({ path, reason: "File is unavailable or outside Quick Folders" });
+    } else {
+      valid.push(path);
+    }
+  });
+
+  queuePaths = QueueState.addPaths(queuePaths, valid);
+  const succeeded = valid.filter((path) => !existing.has(path));
+  if (succeeded.length > 0) saveState();
+  updateWindow();
+  postQueueResult("added", succeeded, failed);
+}
+
+function removeQueueItems({ paths } = {}) {
+  const requested = new Set(QueueState.normalizePaths(paths));
+  const succeeded = queuePaths.filter((path) => requested.has(path));
+  if (succeeded.length === 0) return;
+  queuePaths = QueueState.removePaths(queuePaths, succeeded);
+  saveState();
+  updateWindow();
+  postQueueResult("removed", succeeded);
+}
+
+function clearQueue() {
+  if (queuePaths.length === 0) return;
+  const succeeded = queuePaths.slice();
+  queuePaths = [];
+  saveState();
+  updateWindow();
+  postQueueResult("cleared", succeeded);
+}
+
+function reorderQueue({ paths, targetPath, position } = {}) {
+  const nextQueue = QueueState.movePaths(queuePaths, paths, targetPath, position);
+  if (nextQueue.join("\n") === queuePaths.join("\n")) return;
+  queuePaths = nextQueue;
+  saveState();
+  updateWindow();
+}
+
+async function playQueue() {
+  const directoryCache = new Map();
+  const validPaths = queuePaths.filter((path) => Boolean(getFileItem(path, directoryCache)));
+  const failed = queuePaths
+    .filter((path) => !validPaths.includes(path))
+    .map((path) => ({ path, reason: "File is unavailable or outside Quick Folders" }));
+
+  if (validPaths.length !== queuePaths.length) {
+    queuePaths = validPaths;
+    saveState();
+    updateWindow();
+  }
+  if (validPaths.length === 0) {
+    postQueueResult("played", [], failed.length > 0 ? failed : [{ reason: "Queue is empty" }]);
+    return;
+  }
+
+  try {
+    // Opening one file can create a different IINA player instance, whose
+    // playlist API is not reachable from the standalone window's plugin
+    // context. Opening an M3U delegates the entire ordered queue to IINA in a
+    // single native operation and works from both idle and active players.
+    await queuePlayback.start(validPaths);
+    postQueueResult("played", validPaths, failed);
+  } catch (err) {
+    postQueueResult("played", [], [{ reason: err && err.message ? err.message : "Unable to start queue" }]);
+  }
+}
+
+function setQueuePanelOpen({ open } = {}) {
+  standaloneWindow.setFrame(open ? QUEUE_WINDOW_WIDTH : BROWSER_WINDOW_WIDTH, WINDOW_HEIGHT, null, null);
 }
 
 async function addFolder() {
@@ -763,6 +865,7 @@ async function removeRoot({ path } = {}) {
   const nextRoots = folderRoots.filter((root) => root.path !== path);
   if (nextRoots.length === folderRoots.length) return;
   folderRoots = nextRoots;
+  queuePaths = queuePaths.filter((queuedPath) => !BrowseState.isPathWithinRoots(queuedPath, [{ path }]));
   if (currentPath && BrowseState.isPathWithinRoots(currentPath, [{ path }])) {
     currentPath = null;
     history = [];
@@ -782,6 +885,12 @@ function registerWindowHandlers() {
   standaloneWindow.onMessage("navigate-to", navigateTo);
   standaloneWindow.onMessage("set-watched", ({ paths, watched } = {}) => updateWatchedItems(paths, Boolean(watched)));
   standaloneWindow.onMessage("delete-items", ({ paths } = {}) => deleteItems(paths));
+  standaloneWindow.onMessage("queue-add", addQueueItems);
+  standaloneWindow.onMessage("queue-remove", removeQueueItems);
+  standaloneWindow.onMessage("queue-clear", clearQueue);
+  standaloneWindow.onMessage("queue-reorder", reorderQueue);
+  standaloneWindow.onMessage("queue-play", playQueue);
+  standaloneWindow.onMessage("queue-panel-open", setQueuePanelOpen);
   standaloneWindow.onMessage("remove-root", removeRoot);
   standaloneWindow.onMessage("add-folder", addFolder);
   standaloneWindow.onMessage("refresh-index", async () => {
@@ -803,7 +912,7 @@ function openWindow() {
       titlebarStyle: "hidden"
     });
 
-    standaloneWindow.setFrame(500, 600);
+    standaloneWindow.setFrame(BROWSER_WINDOW_WIDTH, WINDOW_HEIGHT);
     standaloneWindow.loadFile("ui/index.html");
     registerWindowHandlers();
     

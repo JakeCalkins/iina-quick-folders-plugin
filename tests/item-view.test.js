@@ -12,6 +12,7 @@ class FakeElement {
     this._classes = new Set();
     this.classList = {
       add: (...names) => names.forEach((name) => this._classes.add(name)),
+      remove: (...names) => names.forEach((name) => this._classes.delete(name)),
       contains: (name) => this._classes.has(name),
       toggle: (name, enabled) => enabled ? this._classes.add(name) : this._classes.delete(name),
     };
@@ -79,7 +80,7 @@ function installFakeDom() {
 }
 
 function createFileRow({ selected = false } = {}) {
-  const calls = { focus: [], move: [], open: [], select: [] };
+  const calls = { dragEnd: [], dragStart: [], focus: [], move: [], open: [], select: [] };
   const item = { name: "Example.mkv", path: "/media/Example.mkv", isDir: false };
   const row = ItemView.create(item, {
     atRoot: false,
@@ -93,12 +94,33 @@ function createFileRow({ selected = false } = {}) {
     onOpenFile(entry) { calls.open.push(entry.path); },
     onOpenFolder() {},
     onRemoveRoot() {},
+    onDragFiles(entry) { calls.dragStart.push(entry.path); return [entry.path]; },
+    onDragEnd(entry) { calls.dragEnd.push(entry.path); },
     onSelectFile(entry, event, behavior) {
       calls.select.push({ path: entry.path, behavior, shiftKey: event.shiftKey });
     },
   });
   return { calls, item, row };
 }
+
+test("file rows expose a drag source for the queue", () => {
+  installFakeDom();
+  try {
+    const { calls, row } = createFileRow();
+    assert.equal(row.draggable, true);
+    const dragStart = row.dispatch("dragstart");
+    assert.equal(dragStart.defaultPrevented, false);
+    assert.equal(row.classList.contains("dragging"), true);
+    row.dispatch("dragend");
+    assert.equal(row.classList.contains("dragging"), false);
+    assert.deepEqual(calls.dragStart, ["/media/Example.mkv"]);
+    assert.deepEqual(calls.dragEnd, ["/media/Example.mkv"]);
+  } finally {
+    delete global.document;
+    delete global.QuickFoldersView;
+    delete global.QuickFoldersFileTypes;
+  }
+});
 
 test("file activation distinguishes immediate open from modifier selection and duplicate clicks", () => {
   assert.equal(ItemView.getFileActivation({ detail: 1 }), "open");

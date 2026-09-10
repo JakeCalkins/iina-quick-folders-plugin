@@ -17,6 +17,7 @@ function registerBackendMessages() {
   iina.onMessage("index-complete", handleIndexComplete);
   iina.onMessage("update-items", handleStateUpdate);
   iina.onMessage("item-action-result", (result) => handleItemActionResult(result || {}));
+  iina.onMessage("queue-action-result", (result) => handleQueueActionResult(result || {}));
   iina.onMessage("thumbnail-ready", mediaPreview.handleThumbnailReady);
   iina.onMessage("media-metadata-ready", mediaPreview.handleMetadataReady);
 }
@@ -37,6 +38,7 @@ const otherGroup = document.getElementById("other-group");
 const depthWarning = document.getElementById("depth-warning");
 const actionBar = document.getElementById("action-bar");
 const selectionCount = document.getElementById("selection-count");
+const queueSelectionBtn = document.getElementById("queue-selection-btn");
 const watchBtn = document.getElementById("watch-btn");
 const deleteBtn = document.getElementById("delete-btn");
 const cancelSelectionBtn = document.getElementById("cancel-selection-btn");
@@ -49,7 +51,16 @@ const closeHelpBtn = document.getElementById("close-help-btn");
 const openWindowShortcut = document.getElementById("open-window-shortcut");
 const addFolderShortcut = document.getElementById("add-folder-shortcut");
 const toast = document.getElementById("toast");
-const pane = document.querySelector(".pane");
+const appShell = document.getElementById("app-shell");
+const queuePanel = document.getElementById("queue-panel");
+const queueBucket = document.getElementById("queue-bucket");
+const queueBadge = document.getElementById("queue-badge");
+const queueList = document.getElementById("queue-list");
+const queueCount = document.getElementById("queue-count");
+const queueClearBtn = document.getElementById("queue-clear-btn");
+const queueRemoveSelectedBtn = document.getElementById("queue-remove-selected-btn");
+const queueCloseBtn = document.getElementById("queue-close-btn");
+const queuePlayBtn = document.getElementById("queue-play-btn");
 
 setTimeout(() => {
   if (!messageReceived) setIndexingUi(false);
@@ -105,18 +116,33 @@ const interactions = QuickFoldersInteractions.create({
     renderItems();
   },
 });
+const queueController = QuickFoldersQueueController.create({
+  panel: queuePanel,
+  toggleButton: queueBucket,
+  badge: queueBadge,
+  list: queueList,
+  count: queueCount,
+  clearButton: queueClearBtn,
+  removeButton: queueRemoveSelectedBtn,
+  closeButton: queueCloseBtn,
+  playButton: queuePlayBtn,
+  sendMessage: QuickFoldersMessaging.send,
+  onOpenChange(open) {
+    QuickFoldersMessaging.send("queue-panel-open", { open });
+  },
+});
 const deleteDialog = QuickFoldersDialogs.create({
   element: deleteModal,
   initialFocus: confirmDeleteBtn,
   closeButtons: [cancelDeleteBtn],
-  inertTarget: pane,
+  inertTarget: appShell,
 });
 const helpDialog = QuickFoldersDialogs.create({
   element: helpModal,
   trigger: helpBtn,
   initialFocus: closeHelpBtn,
   closeButtons: [closeHelpBtn],
-  inertTarget: pane,
+  inertTarget: appShell,
   toggleKey: "?",
 });
 
@@ -166,6 +192,7 @@ function handleStateUpdate(state) {
   availableExtensions = nextState.availableExtensions || [];
   browseModel.updateIndex(nextState.indexedFiles, nextState.indexRevision);
   if (nextState.preferences) currentPreferences = { ...currentPreferences, ...nextState.preferences };
+  queueController.setItems(nextState.queueItems || []);
   updateHelpShortcuts();
   setIndexingUi(Boolean(nextState.isIndexing), Boolean(nextState.indexReady));
   populateExtensionDropdown();
@@ -306,6 +333,13 @@ function updateActionBar() {
   watchBtn.title = `${watchBtn.textContent} (W)`;
   watchBtn.disabled = actionPending;
   deleteBtn.disabled = actionPending;
+  queueSelectionBtn.disabled = actionPending;
+}
+
+function addSelectedToQueue() {
+  const items = getSelectedItems();
+  if (items.length === 0) return;
+  QuickFoldersMessaging.send("queue-add", { paths: items.map((item) => item.path) });
 }
 
 function setSelectedWatched() {
@@ -377,6 +411,28 @@ function handleItemActionResult(result) {
     showToast(`${failed.length} file${failed.length === 1 ? "" : "s"} could not be updated`, true);
   }
   renderItems();
+}
+
+function handleQueueActionResult(result) {
+  const succeeded = Array.isArray(result.succeeded) ? result.succeeded : [];
+  const failed = Array.isArray(result.failed) ? result.failed : [];
+  const actionCopy = {
+    added: `${succeeded.length} item${succeeded.length === 1 ? "" : "s"} added to queue`,
+    removed: `${succeeded.length} item${succeeded.length === 1 ? "" : "s"} removed from queue`,
+    cleared: "Queue cleared",
+    played: `Playing ${succeeded.length} queued item${succeeded.length === 1 ? "" : "s"}`,
+  };
+  if (succeeded.length > 0) {
+    showToast(actionCopy[result.action] || "Queue updated");
+    if (result.action === "added") {
+      queueBucket.classList.remove("just-added");
+      requestAnimationFrame(() => queueBucket.classList.add("just-added"));
+    }
+  }
+  if (failed.length > 0) {
+    const reason = failed[0] && failed[0].reason;
+    showToast(reason || `${failed.length} queued item${failed.length === 1 ? "" : "s"} could not be used`, true);
+  }
 }
 
 function deleteSelectedItems() {
@@ -556,6 +612,21 @@ function renderItems() {
     },
     onMoveFocus: moveItemFocus,
     onSelectFile: selectItem,
+    onDragFiles(item, event) {
+      const paths = QuickFoldersQueueState.getDraggedPaths(
+        orderedItems.filter((entry) => !entry.isDir).map((entry) => entry.path),
+        Array.from(selectedPaths),
+        item.path,
+      );
+      queueController.setExternalDragPaths(paths);
+      queueController.writeDraggedPaths(event, paths);
+      document.body.classList.add("dragging-media");
+      return paths;
+    },
+    onDragEnd() {
+      queueController.setExternalDragPaths([]);
+      document.body.classList.remove("dragging-media");
+    },
   };
 
   orderedItems.forEach((item, itemIndex) => {
@@ -646,6 +717,7 @@ if (filterDropdown) {
 }
 
 if (watchBtn) watchBtn.addEventListener("click", setSelectedWatched);
+if (queueSelectionBtn) queueSelectionBtn.addEventListener("click", addSelectedToQueue);
 if (deleteBtn) deleteBtn.addEventListener("click", showDeleteConfirmation);
 if (cancelSelectionBtn) cancelSelectionBtn.addEventListener("click", () => clearSelection());
 if (confirmDeleteBtn) {
@@ -656,6 +728,7 @@ document.addEventListener("keydown", (event) => {
   if (deleteDialog.handleKeydown(event) || helpDialog.handleKeydown(event)) return;
 
   const target = event.target;
+  if (target && target.closest && target.closest("#queue-panel")) return;
   const isTyping = target && (
     target.tagName === "INPUT" || target.tagName === "SELECT" || target.tagName === "TEXTAREA"
   );
@@ -703,6 +776,11 @@ document.addEventListener("keydown", (event) => {
     if (selectedPaths.size > 0) {
       event.preventDefault();
       setSelectedWatched();
+    }
+  } else if (event.key.toLowerCase() === "q" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    if (selectedPaths.size > 0) {
+      event.preventDefault();
+      addSelectedToQueue();
     }
   } else if (event.key === "Enter") {
     openFocusedOrSelectedItem();

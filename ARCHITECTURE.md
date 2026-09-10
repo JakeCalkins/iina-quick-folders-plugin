@@ -12,6 +12,8 @@ The repository root is deliberately also the plugin root. IINA's **Install from 
 - `async-resource-loader.js` provides bounded, deduplicated worker queues for thumbnails and media metadata.
 - `thumbnail-service.js` selects bounded native, optional `ffmpeg`, image-resize, or generated-preview strategies and owns temporary output cleanup.
 - `media-metadata.js` parses, merges, and formats Spotlight and optional `ffprobe` values.
+- `queue-playback.js` serializes validated paths into temporary native IINA playlists and synchronizes first-item playback.
+- `queue-state.js` contains bounded, deterministic queue add, remove, drag, and reorder operations shared by both runtimes.
 
 Index builds use a local result and publish it atomically when complete. Concurrent refresh requests share one build; folder-root mutations request a follow-up build so a changing root list cannot leave a stale index.
 
@@ -23,6 +25,7 @@ Index builds use a local result and publish it atomically when complete. Concurr
 - `ui/item-view.js` is the stateless DOM factory for folder and file rows.
 - `ui/media-preview.js` owns lazy loading, bounded caches, and direct path-to-element lookup for media responses.
 - `ui/dialog-controller.js` provides modal focus management and keyboard containment.
+- `ui/queue-controller.js` owns queue-panel rendering, selection, keyboard access, and browser drag/drop behavior.
 - `ui/view-helpers.js`, `ui/search.js`, and `ui/keyboard-shortcuts.js` contain testable presentation and input logic.
 
 Scripts in `ui/index.html` are ordered by dependency. Keep shared/pure modules before DOM controllers and load `app.js` last.
@@ -30,6 +33,7 @@ Scripts in `ui/index.html` are ordered by dependency. Keep shared/pure modules b
 ## Important invariants
 
 - Filesystem mutations and file-open requests must validate paths against configured roots.
+- Persisted queue entries and native-playlist launches must revalidate every path against configured roots and real playable files.
 - Directories remain visible under file-type filters so navigation cannot strand the user.
 - A rendered selection may contain only currently visible file paths.
 - Async thumbnail and metadata requests are lazy, deduplicated, bounded, and must not deliver invalidated results after deletion.
