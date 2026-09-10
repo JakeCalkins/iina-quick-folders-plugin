@@ -48,7 +48,11 @@ if (typeof iina !== "undefined" && iina.onMessage) {
   iina.onMessage("update-items", (state) => {
     currentState = state || {};
     availableExtensions = state.availableExtensions || [];
-    indexedFiles = state.indexedFiles || [];
+    if (indexedSearchRevision !== state.indexRevision) {
+      indexedFiles = state.indexedFiles || [];
+      indexedSearchRecords = indexedFiles.map(file => QuickFoldersSearch.createRecord(file));
+      indexedSearchRevision = state.indexRevision;
+    }
     if (state.preferences) currentPreferences = state.preferences;
     if (state.isIndexing) {
       spinnerContainer.classList.remove("hidden");
@@ -87,8 +91,15 @@ setTimeout(() => {
 
 let currentFilter = "all";
 let currentSearchQuery = "";
+let compiledSearchQuery = QuickFoldersSearch.compileQuery("");
 let availableExtensions = [];
 let indexedFiles = [];
+let indexedSearchRecords = [];
+let indexedSearchRevision = null;
+let searchRenderTimer = null;
+let totalIndexedSearchMatches = 0;
+let indexedResultCache = { key: null, files: [], total: 0 };
+const MAX_RENDERED_SEARCH_RESULTS = 500;
 let currentPreferences = {
   filterImages: true,
   filterAudio: true,
@@ -101,6 +112,11 @@ let currentState = {
   atRoot: true,
 };
 
+const thumbnailCache = new Map();
+const pendingThumbnails = new Set();
+let thumbnailObserver = null;
+const MAX_CACHED_THUMBNAILS = 200;
+
 function getFileIcon(filename, isDir) {
   if (isDir) return FILE_TYPE_ICONS.folder;
   const ext = filename.split(".").pop().toLowerCase();
@@ -111,7 +127,48 @@ function getFileIcon(filename, isDir) {
   return FILE_TYPE_ICONS.file;
 }
 
-// Try to load thumbnail from macOS filesystem if available
+function showThumbnail(thumbEl, dataUrl) {
+  if (!dataUrl) return;
+
+  const imageEl = document.createElement("img");
+  imageEl.className = "thumbnail-image";
+  imageEl.alt = "";
+  imageEl.draggable = false;
+  imageEl.src = dataUrl;
+  thumbEl.textContent = "";
+  thumbEl.appendChild(imageEl);
+  thumbEl.classList.add("has-thumbnail");
+}
+
+function rememberThumbnail(filePath, dataUrl) {
+  if (thumbnailCache.size >= MAX_CACHED_THUMBNAILS) {
+    const oldestPath = thumbnailCache.keys().next().value;
+    thumbnailCache.delete(oldestPath);
+  }
+  thumbnailCache.set(filePath, dataUrl || null);
+}
+
+function requestThumbnail(thumbEl, filePath) {
+  if (thumbnailCache.has(filePath)) {
+    showThumbnail(thumbEl, thumbnailCache.get(filePath));
+    return;
+  }
+  if (pendingThumbnails.has(filePath)) return;
+
+  pendingThumbnails.add(filePath);
+  postMessage("request-thumbnail", { path: filePath });
+}
+
+function observeThumbnail(thumbEl, filePath) {
+  thumbEl.dataset.thumbnailPath = filePath;
+  if (thumbnailObserver) {
+    thumbnailObserver.observe(thumbEl);
+  } else {
+    requestThumbnail(thumbEl, filePath);
+  }
+}
+
+// Keep the type icon visible until the real media thumbnail is ready.
 function loadThumbnail(thumbEl, filePath, isDir) {
   const filename = filePath.split("/").pop();
   thumbEl.textContent = getFileIcon(filename, isDir);
@@ -124,7 +181,38 @@ function loadThumbnail(thumbEl, filePath, isDir) {
     } else if (ext && ext !== filename) {
       thumbEl.classList.add('other');
     }
+
+    observeThumbnail(thumbEl, filePath);
   }
+}
+
+if (typeof IntersectionObserver !== "undefined") {
+  thumbnailObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      const filePath = entry.target.dataset.thumbnailPath;
+      thumbnailObserver.unobserve(entry.target);
+      requestThumbnail(entry.target, filePath);
+    });
+  }, {
+    root: itemListEl,
+    rootMargin: "100px 0px",
+  });
+}
+
+if (typeof iina !== "undefined" && iina.onMessage) {
+  iina.onMessage("thumbnail-ready", (data) => {
+    if (!data || typeof data.path !== "string") return;
+    const { path, dataUrl } = data;
+    pendingThumbnails.delete(path);
+    rememberThumbnail(path, dataUrl);
+
+    document.querySelectorAll(".thumb[data-thumbnail-path]").forEach((thumbEl) => {
+      if (thumbEl.dataset.thumbnailPath === path) {
+        showThumbnail(thumbEl, dataUrl);
+      }
+    });
+  });
 }
 
 function getRelativePath(fullPath, currentPath) {
@@ -167,8 +255,10 @@ function formatFileSize(bytes) {
 
 function matchesSearch(item) {
   if (!currentSearchQuery) return true;
-  const query = currentSearchQuery.toLowerCase();
-  return item.name.toLowerCase().includes(query);
+  return QuickFoldersSearch.match(
+    QuickFoldersSearch.createRecord(item),
+    compiledSearchQuery
+  ).matches;
 }
 
 function matchesFilter(item) {
@@ -183,23 +273,45 @@ function matchesFilter(item) {
   
   // Type-based filter (video, audio, image, other)
   if (item.isDir) return false;
-  return getFileType(item.name) === currentFilter;
+  const lastDot = item.name.lastIndexOf(".");
+  const extension = lastDot > 0 ? item.name.substring(lastDot + 1) : "";
+  return getFileTypeByExt(extension) === currentFilter;
 }
 
 function getFilteredItems() {
   let items = currentState.items;
+  totalIndexedSearchMatches = 0;
   
   // If there's a search query at root level, include matching files from indexed files
   if (currentSearchQuery && currentState.atRoot) {
-    const query = currentSearchQuery.toLowerCase();
-    const matchingFiles = indexedFiles.filter(f => 
-      f.name.toLowerCase().includes(query)
-    );
+    const cacheKey = `${indexedSearchRevision}\u0000${currentFilter}\u0000${currentSearchQuery}`;
+    let topMatchingFiles;
+
+    if (indexedResultCache.key === cacheKey) {
+      topMatchingFiles = indexedResultCache.files;
+      totalIndexedSearchMatches = indexedResultCache.total;
+    } else {
+      const matchingFiles = [];
+      for (const record of indexedSearchRecords) {
+        const result = QuickFoldersSearch.match(record, compiledSearchQuery);
+        if (result.matches && matchesFilter(record.item)) {
+          matchingFiles.push({ file: record.item, score: result.score });
+        }
+      }
+      matchingFiles.sort((left, right) => right.score - left.score);
+      totalIndexedSearchMatches = matchingFiles.length;
+      topMatchingFiles = matchingFiles.slice(0, MAX_RENDERED_SEARCH_RESULTS);
+      indexedResultCache = {
+        key: cacheKey,
+        files: topMatchingFiles,
+        total: totalIndexedSearchMatches,
+      };
+    }
     
     // Convert indexed files to item format for display
-    const searchResults = matchingFiles.map(f => ({
-      path: f.path,
-      name: f.name,
+    const searchResults = topMatchingFiles.map(result => ({
+      path: result.file.path,
+      name: result.file.name,
       isDir: false,
       size: null,
       fromSearch: true, // Mark to show folder path
@@ -287,6 +399,7 @@ function populateExtensionDropdown() {
 }
 
 function renderItems() {
+  if (thumbnailObserver) thumbnailObserver.disconnect();
   const filteredItems = getFilteredItems();
 
   itemListEl.innerHTML = "";
@@ -352,7 +465,12 @@ function renderItems() {
           const startIndex = fullSegments.length - segments.length;
           const targetIndex = startIndex + index;
           const targetPath = "/" + fullSegments.slice(0, targetIndex + 1).join("/");
+          if (searchRenderTimer) {
+            clearTimeout(searchRenderTimer);
+            searchRenderTimer = null;
+          }
           currentSearchQuery = "";
+          compiledSearchQuery = QuickFoldersSearch.compileQuery("");
           if (searchInput) searchInput.value = "";
           
           postMessage("navigate-to", { path: targetPath });
@@ -380,10 +498,10 @@ function renderItems() {
       const containerWidth = breadcrumb.clientWidth;
       
       if (breadcrumbWidth > containerWidth && segments.length > 1) {
-        // Replace parent segments with "../" from left to right
+        // Replace parent segments with ".." from left to right
         let truncatedSegments = [...segments];
         for (let i = 0; i < segments.length - 1; i++) {
-          truncatedSegments[i] = "../";
+          truncatedSegments[i] = "..";
           renderBreadcrumb(truncatedSegments);
           
           // Check if it fits now
@@ -409,6 +527,13 @@ function renderItems() {
     noResultsMsg.textContent = "No results match your search";
     itemListEl.appendChild(noResultsMsg);
     return;
+  }
+
+  if (totalIndexedSearchMatches > MAX_RENDERED_SEARCH_RESULTS) {
+    const resultsSummary = document.createElement("div");
+    resultsSummary.className = "results-summary";
+    resultsSummary.textContent = `Showing the top ${MAX_RENDERED_SEARCH_RESULTS.toLocaleString()} of ${totalIndexedSearchMatches.toLocaleString()} file matches`;
+    itemListEl.appendChild(resultsSummary);
   }
 
   filteredItems.forEach((item) => {
@@ -449,16 +574,26 @@ function renderItems() {
     infoEl.className = "info";
     
     if (item.isDir) {
-      // For folders at root, show the path; for subdirectories, show nothing
-      if (currentState.atRoot) {
-        let displayPath = item.path;
-        const userHomeMatch = displayPath.match(/^\/Users\/[^\/]+\//);
-        if (userHomeMatch) {
-          displayPath = displayPath.substring(userHomeMatch[0].length);
+      if (item.scanning) {
+        infoEl.classList.add("info-scanning");
+        const scanWrapper = document.createElement("div");
+        scanWrapper.className = "scan-bar-wrapper";
+        const scanBar = document.createElement("div");
+        scanBar.className = "scan-bar";
+        scanWrapper.appendChild(scanBar);
+        infoEl.appendChild(scanWrapper);
+      } else {
+        // For folders at root, show the path; for subdirectories, show nothing
+        if (currentState.atRoot) {
+          let displayPath = item.path;
+          const userHomeMatch = displayPath.match(/^\/Users\/[^\/]+\//);
+          if (userHomeMatch) {
+            displayPath = displayPath.substring(userHomeMatch[0].length);
+          }
+          infoEl.textContent = displayPath;
         }
-        infoEl.textContent = displayPath;
+        infoEl.title = item.path;
       }
-      infoEl.title = item.path;
     } else {
       // For files, show extension tag and metadata
       const lastDot = item.name.lastIndexOf(".");
@@ -577,14 +712,24 @@ if (refreshBtn) {
 if (searchInput) {
   searchInput.addEventListener("input", (e) => {
     currentSearchQuery = e.target.value;
-    renderItems();
+    compiledSearchQuery = QuickFoldersSearch.compileQuery(currentSearchQuery);
+    if (searchRenderTimer) clearTimeout(searchRenderTimer);
+    searchRenderTimer = setTimeout(() => {
+      searchRenderTimer = null;
+      renderItems();
+    }, 60);
   });
 }
 
 // Clear search button handler
 if (clearSearchBtn) {
   clearSearchBtn.addEventListener("click", () => {
+    if (searchRenderTimer) {
+      clearTimeout(searchRenderTimer);
+      searchRenderTimer = null;
+    }
     currentSearchQuery = "";
+    compiledSearchQuery = QuickFoldersSearch.compileQuery("");
     if (searchInput) {
       searchInput.value = "";
       searchInput.focus();

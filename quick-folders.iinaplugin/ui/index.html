@@ -35,7 +35,7 @@
       </header>
       <div class="divider"></div>
       <div id="depth-warning" class="depth-warning hidden">
-        ⚠️ Files at this depth aren't searchable for performance reasons. (Configure in settings)
+        ⚠️ Files at this depth aren't searchable for performance reasons
       </div>
       <section id="item-list" class="list" aria-label="Folders and files"></section>
       <footer class="footer">
@@ -52,8 +52,9 @@
             type="text" 
             id="search-input" 
             class="search-input" 
-            placeholder="Search files..."
+            placeholder="Search files (try ext:mp4)..."
             aria-label="Search files"
+            title='Fuzzy search. Use "quotes" for literals, * or ? as wildcards, - to exclude, and ext:mp4 for extensions.'
           />
           <button id="clear-search-btn" class="clear-btn" type="button" title="Clear search">
             <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -72,7 +73,7 @@
     </main>
     <script src="../constants.js"></script>
     <script src="messaging.js"></script>
+    <script src="search.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
-
