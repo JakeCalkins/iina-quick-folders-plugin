@@ -89,7 +89,7 @@ function createFileRow({ selected = false } = {}) {
     mediaPreview: { attachMetadata() {}, loadThumbnail() {} },
     selectedPaths: new Set(selected ? [item.path] : []),
     onFocusItem(entry) { calls.focus.push(entry.path); },
-    onMoveFocus(entry, key) { calls.move.push([entry.path, key]); },
+    onMoveFocus(entry, key, behavior) { calls.move.push([entry.path, key, behavior]); },
     onOpenFile(entry) { calls.open.push(entry.path); },
     onOpenFolder() {},
     onRemoveRoot() {},
@@ -159,6 +159,7 @@ test("focused rows expose listbox state and support Enter, Space, and arrow keys
     const enter = row.dispatch("keydown", { key: "Enter" });
     const space = row.dispatch("keydown", { key: " " });
     const down = row.dispatch("keydown", { key: "ArrowDown" });
+    const shiftUp = row.dispatch("keydown", { key: "ArrowUp", shiftKey: true });
 
     assert.equal(enter.defaultPrevented && enter.propagationStopped, true);
     assert.equal(space.defaultPrevented && space.propagationStopped, true);
@@ -169,7 +170,10 @@ test("focused rows expose listbox state and support Enter, Space, and arrow keys
       behavior: { additive: true, restoreFocus: true },
       shiftKey: false,
     }]);
-    assert.deepEqual(calls.move, [["/media/Example.mkv", "ArrowDown"]]);
+    assert.deepEqual(calls.move, [
+      ["/media/Example.mkv", "ArrowDown", { extendSelection: false }],
+      ["/media/Example.mkv", "ArrowUp", { extendSelection: true }],
+    ]);
   } finally {
     delete global.document;
     delete global.QuickFoldersView;

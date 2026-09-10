@@ -72,3 +72,21 @@ test("interaction boundary rejects malformed navigation and filter values", () =
   assert.deepEqual(harness.messages, []);
   assert.deepEqual(harness.filters, []);
 });
+
+test("keyboard navigation establishes focus and stays inside list bounds", () => {
+  const items = [
+    { path: "/media/a.mp4" },
+    { path: "/media/b.mkv" },
+    { path: "/media/c.mov" },
+  ];
+
+  assert.equal(Interactions.getNavigationTarget(items, null, "ArrowDown").path, "/media/a.mp4");
+  assert.equal(Interactions.getNavigationTarget(items, null, "ArrowUp").path, "/media/c.mov");
+  assert.equal(Interactions.getNavigationTarget(items, "/media/a.mp4", "ArrowUp").path, "/media/a.mp4");
+  assert.equal(Interactions.getNavigationTarget(items, "/media/a.mp4", "ArrowDown").path, "/media/b.mkv");
+  assert.equal(Interactions.getNavigationTarget(items, "/media/b.mkv", "Home").path, "/media/a.mp4");
+  assert.equal(Interactions.getNavigationTarget(items, "/media/b.mkv", "End").path, "/media/c.mov");
+  assert.equal(Interactions.getNavigationTarget([], null, "ArrowDown"), null);
+  assert.equal(Interactions.getNavigationTarget(items, "/media/a.mp4", "PageDown"), null);
+  assert.equal(Interactions.getNavigationTarget(items, null, "PageDown"), null);
+});

@@ -65,6 +65,7 @@ let selectedPaths = new Set();
 let selectionAnchorPath = null;
 let focusedPath = null;
 let visibleItems = [];
+let renderedItems = [];
 let actionPending = false;
 let toastTimer = null;
 let breadcrumbLayoutTimer = null;
@@ -254,6 +255,44 @@ function focusItem(path) {
   row.focus();
 }
 
+function moveItemFocus(item, key, { extendSelection = false } = {}) {
+  const currentPath = item && item.path ? item.path : focusedPath;
+  const target = QuickFoldersInteractions.getNavigationTarget(renderedItems, currentPath, key);
+  if (!target) return false;
+
+  if (extendSelection && !target.isDir) {
+    const currentItem = renderedItems.find((candidate) => candidate.path === currentPath);
+    const anchorPath = selectionAnchorPath
+      || (currentItem && !currentItem.isDir ? currentItem.path : target.path);
+    const result = QuickFoldersBrowseState.updateSelection({
+      visiblePaths: renderedItems.filter((entry) => !entry.isDir).map((entry) => entry.path),
+      selectedPaths: Array.from(selectedPaths),
+      anchorPath,
+      targetPath: target.path,
+      additive: false,
+      range: true,
+    });
+    selectedPaths = new Set(result.selectedPaths);
+    selectionAnchorPath = anchorPath;
+    focusedPath = target.path;
+    renderItems();
+  } else {
+    focusedPath = target.path;
+  }
+  focusItem(focusedPath);
+  return true;
+}
+
+function openFocusedOrSelectedItem() {
+  const focusedItem = renderedItems.find((item) => item.path === focusedPath);
+  const selectedItems = getSelectedItems();
+  const item = focusedItem || (selectedItems.length === 1 ? selectedItems[0] : null);
+  if (!item) return false;
+  if (item.isDir) interactions.openFolder(item);
+  else QuickFoldersMessaging.send("open-item", { path: item.path, isDir: false });
+  return true;
+}
+
 function updateActionBar() {
   if (!actionBar) return;
   const items = getSelectedItems();
@@ -277,12 +316,6 @@ function setSelectedWatched() {
   actionPending = true;
   updateActionBar();
   QuickFoldersMessaging.send("set-watched", { paths: items.map((item) => item.path), watched });
-}
-
-function openSelectedItem() {
-  const items = getSelectedItems();
-  if (items.length !== 1) return;
-  QuickFoldersMessaging.send("open-item", { path: items[0].path, isDir: false });
 }
 
 function showDeleteConfirmation() {
@@ -497,17 +530,7 @@ function renderItems() {
 
   const groupedItems = QuickFoldersBrowseState.partitionWatched(filteredItems);
   const orderedItems = groupedItems.active.concat(groupedItems.watched);
-  function moveItemFocus(item, key) {
-    const currentIndex = orderedItems.findIndex((candidate) => candidate.path === item.path);
-    if (currentIndex === -1) return;
-    let nextIndex = currentIndex;
-    if (key === "Home") nextIndex = 0;
-    else if (key === "End") nextIndex = orderedItems.length - 1;
-    else if (key === "ArrowDown") nextIndex = Math.min(currentIndex + 1, orderedItems.length - 1);
-    else if (key === "ArrowUp") nextIndex = Math.max(currentIndex - 1, 0);
-    focusedPath = orderedItems[nextIndex].path;
-    focusItem(focusedPath);
-  }
+  renderedItems = orderedItems;
   const fragment = document.createDocumentFragment();
   const itemViewOptions = {
     atRoot: currentState.atRoot,
@@ -657,6 +680,12 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
+  if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    moveItemFocus(null, event.key, { extendSelection: event.shiftKey });
+    return;
+  }
+
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
     event.preventDefault();
     const paths = getSelectableItems().map((item) => item.path);
@@ -676,7 +705,7 @@ document.addEventListener("keydown", (event) => {
       setSelectedWatched();
     }
   } else if (event.key === "Enter") {
-    openSelectedItem();
+    openFocusedOrSelectedItem();
   }
 });
 

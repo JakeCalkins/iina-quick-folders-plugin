@@ -55,7 +55,9 @@ Open **IINA → Settings → Plugins → Quick Folders → Settings** to change 
 | `⌘ ⇧ K` | Open Quick Folders (configurable) |
 | `N` | Add a folder (configurable) |
 | `/` or `⌘/Ctrl F` | Focus search |
-| `Return` | Open the selected file |
+| `↑` / `↓` | Move focus through folders and media |
+| `Shift ↑` / `Shift ↓` | Extend the media selection |
+| `Return` | Open the focused file or sole selected file |
 | `Space` | Toggle the focused file in the selection |
 | `⌘/Ctrl A` | Select all visible files |
 | `W` | Mark selected files watched or unwatched |

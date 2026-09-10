@@ -157,7 +157,7 @@ const QuickFoldersItemView = (() => {
         } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
           event.preventDefault();
           event.stopPropagation();
-          options.onMoveFocus(item, event.key);
+          options.onMoveFocus(item, event.key, { extendSelection: event.shiftKey });
         }
       });
     }

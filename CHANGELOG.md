@@ -15,6 +15,7 @@ _No unreleased changes yet._
 - Expanded the IINA-compatible video, audio, and image formats available for browsing and filtering
 - Added lazy codec, bitrate, sample-rate, and channel chips alongside duration and resolution
 - Added generated preview artwork for media without a native thumbnail, with optional local `ffmpeg` frame and embedded-art extraction for non-native formats
+- Added window-level arrow-key navigation, Shift-arrow range selection, `/` search focus, and Enter activation for focused media
 
 ### Changed
 - Made a plain file click play immediately, while modifier-click, the selection control, and Space provide predictable multi-selection
