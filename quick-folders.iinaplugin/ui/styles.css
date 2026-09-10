@@ -12,6 +12,8 @@
   --chip-bg: rgba(255, 255, 255, 0.07);
   --button-border: rgba(255, 255, 255, 0.2);
   --icon-bg: rgba(255, 255, 255, 0.12);
+  --chrome-bg: rgba(18, 18, 20, 0.88);
+  --chrome-shadow: rgba(0, 0, 0, 0.35);
 }
 
 * {
@@ -130,7 +132,20 @@ body {
   -webkit-backdrop-filter: blur(10px);
   position: relative;
   z-index: 10;
+  isolation: isolate;
   padding-bottom: 10px;
+}
+
+.nav-bar::before {
+  content: "";
+  position: absolute;
+  inset: -12px -14px 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--chrome-bg);
+  box-shadow: 0 6px 18px var(--chrome-shadow);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
 .back-btn {
@@ -211,7 +226,7 @@ body {
 
 .breadcrumb-parent {
   font-weight: 400;
-  opacity: 0.7;
+  opacity: 0.8;
   transition: opacity 120ms ease;
 }
 
@@ -228,7 +243,7 @@ body {
   margin: 0 6px;
   color: var(--muted);
   font-weight: 400;
-  opacity: 0.5;
+  opacity: 0.65;
 }
 
 .divider {
@@ -697,6 +712,19 @@ body {
   -webkit-backdrop-filter: blur(10px);
   position: relative;
   z-index: 10;
+  isolation: isolate;
+}
+
+.footer::before {
+  content: "";
+  position: absolute;
+  inset: 0 -14px -12px;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--chrome-bg);
+  box-shadow: 0 -6px 18px var(--chrome-shadow);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
 }
 
 .add-btn {
@@ -755,6 +783,17 @@ body {
     --chip-bg: rgba(0, 0, 0, 0.05);
     --button-border: rgba(0, 0, 0, 0.2);
     --icon-bg: rgba(0, 0, 0, 0.08);
+    --chrome-bg: rgba(250, 250, 252, 0.94);
+    --chrome-shadow: rgba(0, 0, 0, 0.18);
+  }
+
+  .breadcrumb-parent {
+    opacity: 0.88;
+  }
+
+  .breadcrumb-separator {
+    color: #6e6e73;
+    opacity: 0.82;
   }
 
   .indexing-modal {
