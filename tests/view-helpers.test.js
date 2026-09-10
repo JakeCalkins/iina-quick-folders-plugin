@@ -7,14 +7,14 @@ test("formats file names, sizes, and paths for display", () => {
   assert.equal(view.getDisplayName({ name: "Movies", isDir: true }), "Movies");
   assert.equal(view.formatFileSize(12 * 1024 * 1024), "12.0 MB");
   assert.equal(view.formatFileSize(-1), "");
-  assert.equal(view.getContainingFolder("/Users/tim/Media/Movies/clip.mp4"), "Media/Movies");
+  assert.equal(view.getContainingFolder("/Users/example/Media/Movies/clip.mp4"), "Media/Movies");
 });
 
 test("builds breadcrumb labels with stable navigation paths", () => {
-  assert.deepEqual(view.getBreadcrumbSegments("/Users/tim/Desktop/intake/docs"), [
-    { label: "Desktop", path: "/Users/tim/Desktop" },
-    { label: "intake", path: "/Users/tim/Desktop/intake" },
-    { label: "docs", path: "/Users/tim/Desktop/intake/docs" },
+  assert.deepEqual(view.getBreadcrumbSegments("/Users/example/Desktop/intake/docs"), [
+    { label: "Desktop", path: "/Users/example/Desktop" },
+    { label: "intake", path: "/Users/example/Desktop/intake" },
+    { label: "docs", path: "/Users/example/Desktop/intake/docs" },
   ]);
   assert.equal(view.truncateMiddle("abcdefghijklmnopqrstuvwxyz1234567890").length <= 30, true);
 });

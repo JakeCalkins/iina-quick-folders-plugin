@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -78,14 +78,51 @@ function checkMarkdownLinks() {
   return files.length;
 }
 
+function checkAgentReferences() {
+  const files = walk(repositoryRoot, (path) => basename(path) === "CLAUDE.md");
+  files.forEach((path) => {
+    if (readFileSync(path, "utf8").trim() !== "@AGENTS.md") {
+      fail(`${relative(repositoryRoot, path)} must contain only @AGENTS.md`);
+    }
+    if (!existsSync(join(dirname(path), "AGENTS.md"))) {
+      fail(`${relative(repositoryRoot, path)} has no sibling AGENTS.md`);
+    }
+  });
+  return files.length;
+}
+
+function checkPrivacy() {
+  const textExtensions = new Set([".css", ".html", ".js", ".json", ".md", ".mjs", ".sh", ".yaml", ".yml"]);
+  const textNames = new Set([".editorconfig", ".gitattributes", ".gitignore"]);
+  const files = walk(repositoryRoot, (path) => textExtensions.has(extname(path)) || textNames.has(basename(path)));
+  const forbidden = [
+    [/(?:\/Users\/(?!example(?:\/|$)|demo(?:\/|$)|Shared(?:\/|$))[^/\s]+|\/home\/(?!example(?:\/|$))[^/\s]+)\//, "machine-specific home path"],
+    [/\/private\/(?:tmp|var)\//, "machine-specific private temporary path"],
+    [/-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/, "private key"],
+    [/(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})/, "GitHub token"],
+    [/AKIA[0-9A-Z]{16}/, "AWS access key"],
+    [/xox[baprs]-[A-Za-z0-9-]{20,}/, "Slack token"],
+  ];
+
+  files.forEach((path) => {
+    readFileSync(path, "utf8").split(/\r?\n/).forEach((line, index) => {
+      forbidden.forEach(([pattern, label]) => {
+        if (pattern.test(line)) fail(`${relative(repositoryRoot, path)}:${index + 1} contains a possible ${label}`);
+      });
+    });
+  });
+}
+
 const scriptCount = checkJavaScriptSyntax();
 checkManifest();
 checkBrowserScripts();
 const markdownCount = checkMarkdownLinks();
+const agentReferenceCount = checkAgentReferences();
+checkPrivacy();
 
 if (failures.length > 0) {
   failures.forEach((message) => console.error(`ERROR: ${message}`));
   process.exit(1);
 }
 
-console.log(`Validated ${scriptCount} JavaScript files, the plugin manifest, browser assets, and ${markdownCount} Markdown files.`);
+console.log(`Validated ${scriptCount} JavaScript files, the plugin manifest, browser assets, ${markdownCount} Markdown files, ${agentReferenceCount} agent references, and privacy patterns.`);

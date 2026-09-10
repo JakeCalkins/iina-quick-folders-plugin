@@ -4,6 +4,7 @@ Thanks for improving Quick Folders. Small, focused changes with clear test evide
 
 ## Before you start
 
+- Automated coding agents should follow the root [AGENTS.md](AGENTS.md) plus the nearest scoped `AGENTS.md` for files they change. Matching `CLAUDE.md` files reference those instructions without duplicating them.
 - Search [existing issues](https://github.com/JakeCalkins/iina-quick-folders-plugin/issues) before filing a new one.
 - Use the bug or feature issue form so environment and reproduction details are captured consistently.
 - For security-sensitive reports, follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
@@ -40,7 +41,7 @@ The helper finds `iina-plugin` on `PATH` or inside `/Applications/IINA.app`; no 
 | Command | Purpose |
 | --- | --- |
 | `npm test` | Run the Node test suite |
-| `npm run check` | Check JavaScript syntax, the plugin manifest, browser script references, and local documentation links |
+| `npm run check` | Check JavaScript syntax, the plugin manifest, browser references, documentation links, agent references, and high-confidence privacy patterns |
 | `npm run package` | Build a tested `.iinaplgz` and SHA-256 checksum in `dist/` |
 | `npm run verify` | Run all static checks, tests, and packaging |
 | `npm run dev:link` / `npm run dev:unlink` | Add or remove the development plugin in IINA |

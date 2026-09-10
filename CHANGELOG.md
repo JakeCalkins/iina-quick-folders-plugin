@@ -22,6 +22,7 @@ _No unreleased changes yet._
 - Unified header and footer edge treatments and stabilized the root-folder remove animation
 - Modularized shared file typing, indexed search, row rendering, dialogs, and media loading while reducing repeated work during rendering and indexing
 - Added dependency-free validation and packaging commands, pull-request CI, verified release artifacts, structured issue forms, and contributor/release documentation
+- Added scoped coding-agent guidance, Claude references, and automated checks for contributor-file packaging and common privacy leaks
 
 ### Fixed
 - Added adaptive colors for readable text and controls in macOS light mode

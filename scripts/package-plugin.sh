@@ -22,12 +22,25 @@ checksum="$archive.sha256"
 rm -f -- "$archive" "$checksum"
 (
   cd -- "$plugin_dir"
-  find . -type f ! -name '.DS_Store' -print \
+  find . -type f \
+    ! -name '.DS_Store' \
+    ! -name 'AGENTS.md' \
+    ! -name 'CLAUDE.md' \
+    -print \
     | LC_ALL=C sort \
     | sed 's#^\./##' \
     | zip -q -X "$archive" -@
 )
 unzip -tq "$archive"
+
+while IFS= read -r entry; do
+  case "$entry" in
+    AGENTS.md|CLAUDE.md|*/AGENTS.md|*/CLAUDE.md)
+      echo "Contributor instruction file was included in the package: $entry" >&2
+      exit 1
+      ;;
+  esac
+done < <(unzip -Z1 "$archive")
 
 if command -v shasum >/dev/null 2>&1; then
   (cd -- "$output_dir" && shasum -a 256 "$(basename -- "$archive")" > "$(basename -- "$checksum")")
