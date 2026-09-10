@@ -1,4 +1,5 @@
 const { console, core, file, utils, menu, standaloneWindow, preferences } = iina;
+const BrowseState = require("./browse-state.js");
 
 
 const STATE_FILE = "@data/quick-folders-state.json";
@@ -50,11 +51,7 @@ function hashPath(path) {
 }
 
 function isPathInFolderRoots(path) {
-  if (path.includes("/../") || path.includes("\0")) return false;
-  return folderRoots.some((root) => {
-    const rootPath = root.path === "/" ? "/" : root.path.replace(/\/+$/, "");
-    return rootPath === "/" ? path.startsWith("/") : path === rootPath || path.startsWith(rootPath + "/");
-  });
+  return BrowseState.isPathWithinRoots(path, folderRoots);
 }
 
 function rememberThumbnail(path, dataUrl) {
@@ -286,6 +283,8 @@ function ensureFolderScan(folderPath) {
 let folderRoots = [];
 let currentPath = null;
 let history = [];
+let watchedPaths = new Set();
+let viewingWatched = false;
 
 let fileIndex = { extensions: new Set(), files: [] };
 let fileIndexRevision = 0;
@@ -394,7 +393,8 @@ function saveState() {
         extensions: Array.from(fileIndex.extensions), // Convert Set to Array for JSON
         files: fileIndex.files,
       },
-      version: 1,
+      watchedPaths: Array.from(watchedPaths),
+      version: 2,
     };
     const json = JSON.stringify(state, null, 2);
     file.write(STATE_FILE, json);
@@ -412,6 +412,7 @@ function loadState() {
         const state = JSON.parse(data);
         if (state.folderRoots && Array.isArray(state.folderRoots)) {
           folderRoots = state.folderRoots;
+          watchedPaths = new Set(BrowseState.normalizePaths(state.watchedPaths));
           if (state.fileIndex && state.fileIndex.extensions) {
             fileIndex.extensions = new Set(state.fileIndex.extensions);
             fileIndex.files = state.fileIndex.files || [];
@@ -515,6 +516,7 @@ function listFolder(path) {
           isDir: isDir,
           size: fileSize,
           scanning: isDir && (!cached || cached.status === "scanning"),
+          watched: !isDir && watchedPaths.has(fullPath),
         };
       })
       .sort((a, b) => {
@@ -526,16 +528,72 @@ function listFolder(path) {
   }
 }
 
+function getFileItem(path, directoryCache = null) {
+  if (!isPathInFolderRoots(path) || !file.exists(path)) return null;
+  const slashIndex = path.lastIndexOf("/");
+  if (slashIndex < 0) return null;
+  const parentPath = slashIndex === 0 ? "/" : path.substring(0, slashIndex);
+  const name = path.substring(slashIndex + 1);
+  if (!isPlayableFile(name)) return null;
+
+  try {
+    let listing = directoryCache && directoryCache.get(parentPath);
+    if (!listing) {
+      listing = file.list(parentPath, { includeSubDir: false }) || [];
+      if (directoryCache) directoryCache.set(parentPath, listing);
+    }
+    const entry = listing.find((item) => (item.filename || item.name) === name);
+    if (!entry || entry.isDir || entry.is_dir) return null;
+    let fileSize = null;
+    try {
+      const stats = file.stat(path);
+      fileSize = stats && stats.size ? stats.size : null;
+    } catch (err) {
+      // Size is optional; the directory entry already verified this is a file.
+    }
+    return {
+      path,
+      name,
+      isDir: false,
+      size: fileSize,
+      watched: watchedPaths.has(path),
+      fromWatchedView: true,
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
+function getWatchedItems() {
+  const directoryCache = new Map();
+  return Array.from(watchedPaths)
+    .map((path) => getFileItem(path, directoryCache))
+    .filter(Boolean)
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
 function getCurrentItems() {
   logDebug("get-current-items", { currentPath });
+  if (viewingWatched) return getWatchedItems();
+
   if (!currentPath) {
     // At root: show folder roots
-    return folderRoots.map((f) => ({
+    const roots = folderRoots.map((f) => ({
       path: f.path,
       name: f.name,
       isDir: true,
       isRoot: true,
     }));
+    if ((preferences.get("hideWatched") ?? false)) {
+      roots.push({
+        path: "@watched",
+        name: "Watched",
+        isDir: true,
+        isWatchedRoot: true,
+        watchedCount: getWatchedItems().length,
+      });
+    }
+    return roots;
   }
 
   // Inside a folder: show contents
@@ -551,6 +609,7 @@ function updateWindow() {
   const filterImages = preferences.get("filterImages") ?? true;
   const filterAudio = preferences.get("filterAudio") ?? true;
   const videoOnly = preferences.get("videoOnly") ?? false;
+  const hideWatched = preferences.get("hideWatched") ?? false;
   
   // Determine if index is ready (has extensions or no folders to index)
   const indexReady = fileIndex.extensions.size > 0 || folderRoots.length === 0;
@@ -570,10 +629,14 @@ function updateWindow() {
   // Use two-argument form: postMessage(type, data)
   standaloneWindow.postMessage("update-items", {
     items: items,
-    currentPath: currentPath,
-    atRoot: !currentPath,
+    currentPath: viewingWatched ? "@watched" : currentPath,
+    atRoot: !currentPath && !viewingWatched,
+    viewingWatched: viewingWatched,
     availableExtensions: Array.from(fileIndex.extensions).sort(),
-    indexedFiles: fileIndex.files,
+    indexedFiles: fileIndex.files.map((item) => ({
+      ...item,
+      watched: watchedPaths.has(item.path),
+    })),
     indexRevision: fileIndexRevision,
     indexReady: indexReady,
     isIndexing: isIndexing,
@@ -582,8 +645,75 @@ function updateWindow() {
       filterImages: filterImages,
       filterAudio: filterAudio,
       videoOnly: videoOnly,
+      hideWatched: hideWatched,
       maxIndexDepth: preferences.get("maxIndexDepth") ?? DEFAULT_MAX_INDEX_DEPTH,
     },
+  });
+}
+
+function rebuildIndexExtensions() {
+  fileIndex.extensions = new Set(fileIndex.files.map((item) => item.ext).filter(Boolean));
+  fileIndexRevision++;
+}
+
+function updateWatchedItems(paths, watched) {
+  const succeeded = [];
+  const failed = [];
+  const directoryCache = new Map();
+  BrowseState.normalizePaths(paths).slice(0, 1000).forEach((path) => {
+    if (!getFileItem(path, directoryCache)) {
+      failed.push({ path, reason: "File is unavailable or outside Quick Folders" });
+      return;
+    }
+    if (watched) watchedPaths.add(path);
+    else watchedPaths.delete(path);
+    succeeded.push(path);
+  });
+
+  if (succeeded.length > 0) {
+    fileIndexRevision++;
+    saveState();
+  }
+  updateWindow();
+  standaloneWindow.postMessage("item-action-result", {
+    action: watched ? "watched" : "unwatched",
+    succeeded,
+    failed,
+  });
+}
+
+function deleteItems(paths) {
+  const succeeded = [];
+  const failed = [];
+  const directoryCache = new Map();
+  BrowseState.normalizePaths(paths).slice(0, 1000).forEach((path) => {
+    if (!getFileItem(path, directoryCache)) {
+      failed.push({ path, reason: "File is unavailable or outside Quick Folders" });
+      return;
+    }
+    try {
+      file.delete(path);
+      if (file.exists(path)) throw new Error("The file still exists after deletion");
+      watchedPaths.delete(path);
+      thumbnailCache.delete(path);
+      succeeded.push(path);
+    } catch (err) {
+      failed.push({ path, reason: err && err.message ? err.message : "Deletion failed" });
+    }
+  });
+
+  if (succeeded.length > 0) {
+    const deleted = new Set(succeeded);
+    fileIndex.files = fileIndex.files.filter((item) => !deleted.has(item.path));
+    folderScanCache.clear();
+    rebuildIndexExtensions();
+    saveState();
+  }
+  updateWindow();
+  standaloneWindow.postMessage("item-action-result", {
+    action: "deleted",
+    succeeded,
+    failed,
   });
 }
 
@@ -653,10 +783,18 @@ function openWindow() {
       }
     }, 100);
 
-    standaloneWindow.onMessage("open-item", ({ path, isDir }) => {
+    standaloneWindow.onMessage("open-item", ({ path, isDir, isWatchedRoot }) => {
+      if (isWatchedRoot || path === "@watched") {
+        history = [];
+        currentPath = null;
+        viewingWatched = true;
+        updateWindow();
+        return;
+      }
       if (isDir) {
         history.push(currentPath);
         currentPath = path;
+        viewingWatched = false;
         updateWindow();
       } else {
         try {
@@ -668,6 +806,13 @@ function openWindow() {
     });
 
     standaloneWindow.onMessage("go-back", () => {
+      if (viewingWatched) {
+        viewingWatched = false;
+        currentPath = null;
+        history = [];
+        updateWindow();
+        return;
+      }
       if (history.length > 0) {
         currentPath = history.pop() || null;
       } else {
@@ -689,7 +834,16 @@ function openWindow() {
     standaloneWindow.onMessage("navigate-to", ({ path }) => {
       history = [];
       currentPath = path;
+      viewingWatched = false;
       updateWindow();
+    });
+
+    standaloneWindow.onMessage("set-watched", ({ paths, watched }) => {
+      updateWatchedItems(paths, Boolean(watched));
+    });
+
+    standaloneWindow.onMessage("delete-items", ({ paths }) => {
+      deleteItems(paths);
     });
 
     // Listen for remove-root request

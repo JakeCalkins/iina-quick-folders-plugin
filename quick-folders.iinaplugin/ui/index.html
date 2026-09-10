@@ -34,10 +34,18 @@
         </div>
       </header>
       <div class="divider"></div>
+      <div id="action-bar" class="action-bar hidden" aria-live="polite">
+        <span id="selection-count" class="selection-count">0 selected</span>
+        <div class="action-buttons">
+          <button id="watch-btn" class="action-btn watch-action" type="button">Mark Watched</button>
+          <button id="delete-btn" class="action-btn delete-action" type="button">Delete</button>
+          <button id="cancel-selection-btn" class="action-btn cancel-action" type="button" title="Clear selection (Escape)" aria-label="Clear selection">×</button>
+        </div>
+      </div>
       <div id="depth-warning" class="depth-warning hidden">
         ⚠️ Files at this depth aren't searchable for performance reasons
       </div>
-      <section id="item-list" class="list" aria-label="Folders and files"></section>
+      <section id="item-list" class="list" role="listbox" aria-multiselectable="true" aria-label="Folders and files"></section>
       <footer class="footer">
         <div id="spinner-container" class="spinner-container">
           <div class="progress-info">
@@ -71,7 +79,20 @@
         </div>
       </footer>
     </main>
+    <div id="delete-modal" class="confirm-modal hidden" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+      <div class="confirm-card">
+        <div class="confirm-icon" aria-hidden="true">!</div>
+        <h2 id="delete-modal-title">Permanently delete?</h2>
+        <p id="delete-modal-message">This cannot be undone.</p>
+        <div class="confirm-actions">
+          <button id="cancel-delete-btn" class="confirm-btn" type="button">Cancel</button>
+          <button id="confirm-delete-btn" class="confirm-btn destructive" type="button">Delete Permanently</button>
+        </div>
+      </div>
+    </div>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     <script src="../constants.js"></script>
+    <script src="../browse-state.js"></script>
     <script src="messaging.js"></script>
     <script src="search.js"></script>
     <script src="app.js"></script>

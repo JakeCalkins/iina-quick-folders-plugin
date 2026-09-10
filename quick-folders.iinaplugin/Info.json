@@ -22,6 +22,7 @@
     "filterImages": false,
     "filterAudio": false,
     "videoOnly": false,
+    "hideWatched": false,
     "maxIndexDepth": 3,
     "openWindowShortcut": "cmd+shift+a",
     "addFolderShortcut": "n"

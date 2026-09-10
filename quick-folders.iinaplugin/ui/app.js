@@ -46,7 +46,10 @@ if (typeof iina !== "undefined" && iina.onMessage) {
   });
 
   iina.onMessage("update-items", (state) => {
+    const previousLocation = `${currentState.currentPath || ""}:${Boolean(currentState.viewingWatched)}`;
     currentState = state || {};
+    const nextLocation = `${currentState.currentPath || ""}:${Boolean(currentState.viewingWatched)}`;
+    if (previousLocation !== nextLocation) clearSelection(false);
     availableExtensions = state.availableExtensions || [];
     if (indexedSearchRevision !== state.indexRevision) {
       indexedFiles = state.indexedFiles || [];
@@ -66,6 +69,10 @@ if (typeof iina !== "undefined" && iina.onMessage) {
     renderItems();
     messageReceived = true;
   });
+
+  iina.onMessage("item-action-result", (result) => {
+    handleItemActionResult(result || {});
+  });
 }
 
 const itemListEl = document.getElementById("item-list");
@@ -81,6 +88,16 @@ const audioGroup = document.getElementById("audio-group");
 const imageGroup = document.getElementById("image-group");
 const otherGroup = document.getElementById("other-group");
 const depthWarning = document.getElementById("depth-warning");
+const actionBar = document.getElementById("action-bar");
+const selectionCount = document.getElementById("selection-count");
+const watchBtn = document.getElementById("watch-btn");
+const deleteBtn = document.getElementById("delete-btn");
+const cancelSelectionBtn = document.getElementById("cancel-selection-btn");
+const deleteModal = document.getElementById("delete-modal");
+const deleteModalMessage = document.getElementById("delete-modal-message");
+const cancelDeleteBtn = document.getElementById("cancel-delete-btn");
+const confirmDeleteBtn = document.getElementById("confirm-delete-btn");
+const toast = document.getElementById("toast");
 
 setTimeout(() => {
   if (!messageReceived) {
@@ -99,17 +116,23 @@ let indexedSearchRevision = null;
 let searchRenderTimer = null;
 let totalIndexedSearchMatches = 0;
 let indexedResultCache = { key: null, files: [], total: 0 };
+let selectedPaths = new Set();
+let selectionAnchorPath = null;
+let actionPending = false;
+let toastTimer = null;
 const MAX_RENDERED_SEARCH_RESULTS = 500;
 let currentPreferences = {
   filterImages: true,
   filterAudio: true,
   videoOnly: false,
+  hideWatched: false,
 };
 
 let currentState = {
   items: [],
   currentPath: null,
   atRoot: true,
+  viewingWatched: false,
 };
 
 const thumbnailCache = new Map();
@@ -315,6 +338,7 @@ function getFilteredItems() {
       isDir: false,
       size: null,
       fromSearch: true, // Mark to show folder path
+      watched: Boolean(result.file.watched),
     }));
     
     // Combine folders that contain matches with the matching files
@@ -326,8 +350,13 @@ function getFilteredItems() {
     items = items.filter(item => matchesSearch(item));
   }
   
-  // Apply filter (type/extension)
-  return items.filter(item => matchesFilter(item));
+  // Apply filter (type/extension) and optionally keep watched files in their
+  // dedicated virtual folder only.
+  return items.filter((item) => {
+    if (!matchesFilter(item)) return false;
+    if (currentPreferences.hideWatched && !currentState.viewingWatched && item.watched) return false;
+    return true;
+  });
 }
 
 function populateExtensionDropdown() {
@@ -398,11 +427,127 @@ function populateExtensionDropdown() {
   }
 }
 
+function getSelectableItems() {
+  return getFilteredItems().filter((item) => !item.isDir);
+}
+
+function getSelectedItems() {
+  return getSelectableItems().filter((item) => selectedPaths.has(item.path));
+}
+
+function clearSelection(shouldRender = true) {
+  selectedPaths.clear();
+  selectionAnchorPath = null;
+  if (shouldRender) renderItems();
+}
+
+function selectItem(item, event) {
+  const result = QuickFoldersBrowseState.updateSelection({
+    visiblePaths: getSelectableItems().map((entry) => entry.path),
+    selectedPaths: Array.from(selectedPaths),
+    anchorPath: selectionAnchorPath,
+    targetPath: item.path,
+    additive: Boolean(event.metaKey || event.ctrlKey),
+    range: Boolean(event.shiftKey),
+  });
+  selectedPaths = new Set(result.selectedPaths);
+  selectionAnchorPath = result.anchorPath;
+  renderItems();
+}
+
+function updateActionBar() {
+  if (!actionBar) return;
+  const items = getSelectedItems();
+  const hasSelection = items.length > 0;
+  actionBar.classList.toggle("hidden", !hasSelection);
+  if (!hasSelection) return;
+
+  selectionCount.textContent = `${items.length} selected`;
+  const allWatched = items.every((item) => item.watched);
+  watchBtn.textContent = allWatched ? "Mark Unwatched" : "Mark Watched";
+  watchBtn.title = `${watchBtn.textContent} (W)`;
+  watchBtn.disabled = actionPending;
+  deleteBtn.disabled = actionPending;
+}
+
+function setSelectedWatched() {
+  if (actionPending) return;
+  const items = getSelectedItems();
+  if (items.length === 0) return;
+  const watched = !items.every((item) => item.watched);
+  actionPending = true;
+  updateActionBar();
+  postMessage("set-watched", { paths: items.map((item) => item.path), watched });
+}
+
+function openSelectedItem() {
+  const items = getSelectedItems();
+  if (items.length !== 1) return;
+  postMessage("open-item", { path: items[0].path, isDir: false });
+}
+
+function showDeleteConfirmation() {
+  if (actionPending || !deleteModal) return;
+  const items = getSelectedItems();
+  if (items.length === 0) return;
+  deleteModalMessage.textContent = items.length === 1
+    ? `“${items[0].name}” will be permanently deleted. This cannot be undone.`
+    : `${items.length} files will be permanently deleted. This cannot be undone.`;
+  deleteModal.classList.remove("hidden");
+  confirmDeleteBtn.focus();
+}
+
+function hideDeleteConfirmation() {
+  if (deleteModal) deleteModal.classList.add("hidden");
+}
+
+function showToast(message, isError = false) {
+  if (!toast) return;
+  if (toastTimer) clearTimeout(toastTimer);
+  toast.textContent = message;
+  toast.classList.toggle("error", isError);
+  toast.classList.remove("hidden");
+  toastTimer = setTimeout(() => {
+    toast.classList.add("hidden");
+    toastTimer = null;
+  }, 2800);
+}
+
+function handleItemActionResult(result) {
+  actionPending = false;
+  const succeeded = Array.isArray(result.succeeded) ? result.succeeded : [];
+  const failed = Array.isArray(result.failed) ? result.failed : [];
+  succeeded.forEach((path) => selectedPaths.delete(path));
+  if (selectedPaths.size === 0) selectionAnchorPath = null;
+
+  const verb = result.action === "deleted"
+    ? "deleted"
+    : result.action === "unwatched" ? "marked unwatched" : "marked watched";
+  if (succeeded.length > 0) {
+    showToast(`${succeeded.length} file${succeeded.length === 1 ? "" : "s"} ${verb}`);
+  }
+  if (failed.length > 0) {
+    showToast(`${failed.length} file${failed.length === 1 ? "" : "s"} could not be updated`, true);
+  }
+  renderItems();
+}
+
+function deleteSelectedItems() {
+  if (actionPending) return;
+  const items = getSelectedItems();
+  if (items.length === 0) return;
+  hideDeleteConfirmation();
+  actionPending = true;
+  updateActionBar();
+  postMessage("delete-items", { paths: items.map((item) => item.path) });
+}
+
 function renderItems() {
   if (thumbnailObserver) thumbnailObserver.disconnect();
   const filteredItems = getFilteredItems();
 
   itemListEl.innerHTML = "";
+  updateActionBar();
 
   // Update back button
   backBtn.classList.toggle("hidden", currentState.atRoot);
@@ -418,6 +563,10 @@ function renderItems() {
   breadcrumb.innerHTML = "";
   if (currentState.atRoot) {
     breadcrumb.textContent = "Quick Folders";
+    breadcrumb.classList.add("breadcrumb-root");
+  } else if (currentState.viewingWatched) {
+    breadcrumb.textContent = "Watched";
+    breadcrumb.title = "Watched media";
     breadcrumb.classList.add("breadcrumb-root");
   } else {
     breadcrumb.classList.remove("breadcrumb-root");
@@ -516,7 +665,9 @@ function renderItems() {
   if (currentState.items.length === 0) {
     const emptyMsg = document.createElement("div");
     emptyMsg.className = "empty";
-    emptyMsg.textContent = currentState.atRoot ? "No folders added yet" : "Empty folder";
+    emptyMsg.textContent = currentState.viewingWatched
+      ? "No watched items"
+      : currentState.atRoot ? "No folders added yet" : "Empty folder";
     itemListEl.appendChild(emptyMsg);
     return;
   }
@@ -524,7 +675,9 @@ function renderItems() {
   if (filteredItems.length === 0) {
     const noResultsMsg = document.createElement("div");
     noResultsMsg.className = "empty";
-    noResultsMsg.textContent = "No results match your search";
+    noResultsMsg.textContent = currentPreferences.hideWatched && !currentSearchQuery
+      ? "No unwatched items in this folder"
+      : "No results match your search";
     itemListEl.appendChild(noResultsMsg);
     return;
   }
@@ -536,9 +689,28 @@ function renderItems() {
     itemListEl.appendChild(resultsSummary);
   }
 
-  filteredItems.forEach((item) => {
+  const groupedItems = QuickFoldersBrowseState.partitionWatched(filteredItems);
+  const orderedItems = groupedItems.active.concat(groupedItems.watched);
+
+  orderedItems.forEach((item, itemIndex) => {
+    if (
+      item.watched &&
+      !currentState.viewingWatched &&
+      (itemIndex === 0 || !orderedItems[itemIndex - 1].watched)
+    ) {
+      const sectionEl = document.createElement("div");
+      sectionEl.className = "section-label";
+      sectionEl.textContent = `Watched · ${groupedItems.watched.length}`;
+      itemListEl.appendChild(sectionEl);
+    }
+
     const rowEl = document.createElement("div");
     rowEl.className = "row";
+    rowEl.dataset.path = item.path;
+    rowEl.setAttribute("role", "option");
+    rowEl.setAttribute("aria-selected", String(selectedPaths.has(item.path)));
+    if (item.watched) rowEl.classList.add("watched");
+    if (selectedPaths.has(item.path)) rowEl.classList.add("selected");
     
     // Disable clicking on items during indexing
     if (currentState.isIndexing) {
@@ -583,8 +755,12 @@ function renderItems() {
         scanWrapper.appendChild(scanBar);
         infoEl.appendChild(scanWrapper);
       } else {
+        if (item.isWatchedRoot) {
+          infoEl.textContent = `${item.watchedCount || 0} item${item.watchedCount === 1 ? "" : "s"}`;
+          infoEl.title = "Show watched media";
+        }
         // For folders at root, show the path; for subdirectories, show nothing
-        if (currentState.atRoot) {
+        else if (currentState.atRoot) {
           let displayPath = item.path;
           const userHomeMatch = displayPath.match(/^\/Users\/[^\/]+\//);
           if (userHomeMatch) {
@@ -592,7 +768,7 @@ function renderItems() {
           }
           infoEl.textContent = displayPath;
         }
-        infoEl.title = item.path;
+        if (!item.isWatchedRoot) infoEl.title = item.path;
       }
     } else {
       // For files, show extension tag and metadata
@@ -616,6 +792,13 @@ function renderItems() {
       
       extTag.textContent = extUpper;
       infoEl.appendChild(extTag);
+
+      if (item.watched) {
+        const watchedTag = document.createElement("span");
+        watchedTag.className = "watched-tag";
+        watchedTag.textContent = "Watched";
+        infoEl.appendChild(watchedTag);
+      }
       
       // Show file size if available
       if (item.size) {
@@ -626,7 +809,7 @@ function renderItems() {
       }
       
       // If this is a search result (file from a subfolder), show the containing folder path
-      if (item.fromSearch && currentSearchQuery) {
+      if ((item.fromSearch && currentSearchQuery) || item.fromWatchedView) {
         const pathSpan = document.createElement("span");
         pathSpan.className = "metadata";
         
@@ -658,11 +841,33 @@ function renderItems() {
     rowEl.appendChild(thumbEl);
     rowEl.appendChild(metaEl);
 
-    // Click handler - disabled during indexing
+    // Folders retain one-click navigation; files use standard multi-selection.
     if (!currentState.isIndexing) {
-      rowEl.addEventListener("click", () => {
-        postMessage("open-item", { path: item.path, isDir: item.isDir });
+      rowEl.addEventListener("click", (event) => {
+        if (item.isDir) {
+          clearSelection(false);
+          postMessage("open-item", {
+            path: item.path,
+            isDir: true,
+            isWatchedRoot: Boolean(item.isWatchedRoot),
+          });
+        } else {
+          selectItem(item, event);
+        }
       });
+      if (!item.isDir) {
+        rowEl.addEventListener("dblclick", () => {
+          postMessage("open-item", { path: item.path, isDir: false });
+        });
+      }
+    }
+
+    if (!item.isDir) {
+      const selectionEl = document.createElement("span");
+      selectionEl.className = "selection-indicator";
+      selectionEl.setAttribute("aria-hidden", "true");
+      selectionEl.textContent = "✓";
+      rowEl.appendChild(selectionEl);
     }
 
     // Remove button for root folders
@@ -745,6 +950,54 @@ if (filterDropdown) {
     renderItems();
   });
 }
+
+if (watchBtn) watchBtn.addEventListener("click", setSelectedWatched);
+if (deleteBtn) deleteBtn.addEventListener("click", showDeleteConfirmation);
+if (cancelSelectionBtn) cancelSelectionBtn.addEventListener("click", () => clearSelection());
+if (cancelDeleteBtn) cancelDeleteBtn.addEventListener("click", hideDeleteConfirmation);
+if (confirmDeleteBtn) {
+  confirmDeleteBtn.addEventListener("click", deleteSelectedItems);
+}
+if (deleteModal) {
+  deleteModal.addEventListener("click", (event) => {
+    if (event.target === deleteModal) hideDeleteConfirmation();
+  });
+}
+
+document.addEventListener("keydown", (event) => {
+  if (!deleteModal.classList.contains("hidden")) {
+    if (event.key === "Escape") hideDeleteConfirmation();
+    return;
+  }
+
+  const target = event.target;
+  const isTyping = target && (
+    target.tagName === "INPUT" || target.tagName === "SELECT" || target.tagName === "TEXTAREA"
+  );
+  if (isTyping) return;
+
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+    event.preventDefault();
+    const paths = getSelectableItems().map((item) => item.path);
+    selectedPaths = new Set(paths);
+    selectionAnchorPath = paths[0] || null;
+    renderItems();
+  } else if (event.key === "Escape") {
+    clearSelection();
+  } else if (event.key === "Delete" || event.key === "Backspace") {
+    if (selectedPaths.size > 0) {
+      event.preventDefault();
+      showDeleteConfirmation();
+    }
+  } else if (event.key.toLowerCase() === "w" && !event.metaKey && !event.ctrlKey) {
+    if (selectedPaths.size > 0) {
+      event.preventDefault();
+      setSelectedWatched();
+    }
+  } else if (event.key === "Enter") {
+    openSelectedItem();
+  }
+});
 
 
 // Request initial state from main.js

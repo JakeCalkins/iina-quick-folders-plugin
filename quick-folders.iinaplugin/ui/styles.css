@@ -52,6 +52,219 @@
   --chrome-shadow: rgba(0, 0, 0, 0.35);
 }
 
+/* Browse selection and file actions */
+.action-bar {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 7px;
+  position: relative;
+  z-index: 9;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--divider);
+  box-shadow: 0 5px 14px var(--chrome-shadow);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+}
+
+.selection-count {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.action-btn,
+.confirm-btn {
+  border: 1px solid var(--button-border);
+  border-radius: 9px;
+  background: var(--chip-bg);
+  color: var(--text);
+  padding: 6px 9px;
+  font: 600 11px -apple-system, "SF Pro Text", sans-serif;
+  cursor: pointer;
+}
+
+.action-btn:hover,
+.confirm-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-hover-bg);
+}
+
+.action-btn:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.delete-action,
+.confirm-btn.destructive {
+  color: var(--remove-hover-color);
+}
+
+.delete-action:hover,
+.confirm-btn.destructive:hover {
+  border-color: var(--remove-hover-color);
+  background: var(--remove-hover-bg);
+}
+
+.cancel-action {
+  width: 28px;
+  padding-left: 0;
+  padding-right: 0;
+  font-size: 17px;
+  line-height: 14px;
+}
+
+.section-label {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 13px 8px 5px;
+  text-transform: uppercase;
+}
+
+.row.selected,
+.row.selected:hover {
+  background: var(--accent-strong-bg);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.selection-indicator {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--button-border);
+  border-radius: 50%;
+  color: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease;
+}
+
+.row:hover .selection-indicator,
+.row.selected .selection-indicator {
+  opacity: 1;
+}
+
+.row.selected .selection-indicator {
+  color: white;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.row.watched .thumb,
+.row.watched .meta {
+  filter: grayscale(0.75);
+  opacity: 0.52;
+}
+
+.row.watched:hover .thumb,
+.row.watched:hover .meta,
+.row.watched.selected .thumb,
+.row.watched.selected .meta {
+  opacity: 0.7;
+}
+
+.watched-tag {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.confirm-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  -webkit-app-region: no-drag;
+  -webkit-user-select: text;
+}
+
+.confirm-card {
+  width: min(350px, 100%);
+  border: 1px solid var(--tooltip-border);
+  border-radius: 16px;
+  background: var(--dropdown-bg);
+  color: var(--text);
+  padding: 22px;
+  text-align: center;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+}
+
+.confirm-icon {
+  width: 34px;
+  height: 34px;
+  margin: 0 auto 10px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--remove-hover-bg);
+  color: var(--remove-hover-color);
+  font-weight: 800;
+}
+
+.confirm-card h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+
+.confirm-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 70px;
+  z-index: 11000;
+  transform: translateX(-50%);
+  max-width: calc(100% - 32px);
+  padding: 8px 12px;
+  border: 1px solid var(--tooltip-border);
+  border-radius: 9px;
+  background: var(--tooltip-bg);
+  color: var(--text);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+}
+
+.toast.error {
+  color: var(--remove-hover-color);
+}
+
 /* Light mode colors */
 @media (prefers-color-scheme: light) {
   :root {

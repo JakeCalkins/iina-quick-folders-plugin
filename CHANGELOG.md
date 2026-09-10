@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Multi-select file actions for marking media watched or unwatched and permanently deleting files after confirmation
+- Optional watched-file hiding with a dedicated Watched folder for restoring items
+
 ### Fixed
 - Added adaptive colors for readable text and controls in macOS light mode
 

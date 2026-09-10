@@ -1,0 +1,68 @@
+const QuickFoldersBrowseState = (() => {
+  function normalizePaths(paths) {
+    if (!Array.isArray(paths)) return [];
+    const unique = new Set();
+    paths.forEach((path) => {
+      if (typeof path === "string" && path.length > 0) unique.add(path);
+    });
+    return Array.from(unique);
+  }
+
+  function isPathWithinRoots(path, roots) {
+    if (typeof path !== "string" || path.length === 0) return false;
+    if (path.includes("\0") || path.split("/").includes("..")) return false;
+
+    return (Array.isArray(roots) ? roots : []).some((root) => {
+      if (!root || typeof root.path !== "string") return false;
+      const rootPath = root.path === "/" ? "/" : root.path.replace(/\/+$/, "");
+      return rootPath === "/"
+        ? path.startsWith("/")
+        : path === rootPath || path.startsWith(rootPath + "/");
+    });
+  }
+
+  function partitionWatched(items) {
+    const active = [];
+    const watched = [];
+    (Array.isArray(items) ? items : []).forEach((item) => {
+      if (item && !item.isDir && item.watched) watched.push(item);
+      else active.push(item);
+    });
+    return { active, watched };
+  }
+
+  function updateSelection(options) {
+    const visiblePaths = normalizePaths(options && options.visiblePaths);
+    const targetPath = options && options.targetPath;
+    const current = new Set(normalizePaths(options && options.selectedPaths));
+    const targetIndex = visiblePaths.indexOf(targetPath);
+    if (targetIndex === -1) {
+      return { selectedPaths: Array.from(current), anchorPath: options && options.anchorPath };
+    }
+
+    if (options && options.range && options.anchorPath) {
+      const anchorIndex = visiblePaths.indexOf(options.anchorPath);
+      if (anchorIndex !== -1) {
+        const next = options.additive ? current : new Set();
+        const start = Math.min(anchorIndex, targetIndex);
+        const end = Math.max(anchorIndex, targetIndex);
+        for (let index = start; index <= end; index++) next.add(visiblePaths[index]);
+        return { selectedPaths: Array.from(next), anchorPath: options.anchorPath };
+      }
+    }
+
+    if (options && options.additive) {
+      if (current.has(targetPath)) current.delete(targetPath);
+      else current.add(targetPath);
+      return { selectedPaths: Array.from(current), anchorPath: targetPath };
+    }
+
+    return { selectedPaths: [targetPath], anchorPath: targetPath };
+  }
+
+  return { isPathWithinRoots, normalizePaths, partitionWatched, updateSelection };
+})();
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = QuickFoldersBrowseState;
+}
