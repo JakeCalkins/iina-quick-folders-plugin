@@ -45,12 +45,18 @@ function checkManifest() {
   });
   if (!/^\d+\.\d+\.\d+$/.test(manifest.version || "")) fail("Info.json version must use semantic versioning (x.y.z)");
   if (!existsSync(join(pluginRoot, manifest.entry || ""))) fail(`Info.json entry does not exist: ${manifest.entry}`);
+  if (typeof manifest.global === "string" && !existsSync(join(pluginRoot, manifest.global))) {
+    fail(`Info.json global entry does not exist: ${manifest.global}`);
+  }
   if (typeof manifest.preferencesPage !== "string" || !existsSync(join(pluginRoot, manifest.preferencesPage))) {
     fail(`Info.json preferencesPage does not exist: ${manifest.preferencesPage}`);
   }
   if (!/^[^/\s]+\/[^/\s]+$/.test(manifest.ghRepo || "")) fail("Info.json ghRepo must use owner/repository format");
   if (!Number.isInteger(manifest.ghVersion) || manifest.ghVersion < 1) fail("Info.json ghVersion must be a positive integer");
   if (!Array.isArray(manifest.permissions)) fail("Info.json permissions must be an array");
+  if (Array.isArray(manifest.allowedDomains) && manifest.allowedDomains.includes("*")) {
+    fail("Info.json must not grant unrestricted network access");
+  }
   if (!manifest.preferenceDefaults || typeof manifest.preferenceDefaults !== "object") fail("Info.json requires preferenceDefaults");
 }
 

@@ -7,10 +7,28 @@ const QuickFoldersFileTypes = (() => {
     OTHER: "other",
   });
 
+  // Keep this allowlist aligned with formats IINA advertises or decodes through
+  // mpv. Ambiguous document and playlist extensions remain excluded so a file
+  // never becomes actionable merely because IINA has a wildcard association.
   const EXTENSIONS_BY_TYPE = Object.freeze({
-    [FILE_TYPES.VIDEO]: new Set(["mp4", "mkv", "avi", "mov", "flv", "wmv", "webm", "m4v", "3gp", "ts", "mts", "m2ts", "mxf"]),
-    [FILE_TYPES.AUDIO]: new Set(["mp3", "aac", "flac", "ogg", "wav", "wma", "aiff", "opus", "m4a"]),
-    [FILE_TYPES.IMAGE]: new Set(["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "tiff", "ico"]),
+    [FILE_TYPES.VIDEO]: new Set([
+      "3g2", "3gp", "amv", "asf", "avi", "divx", "dv", "f4v", "flv",
+      "m1v", "m2t", "m2ts", "m2v", "m4v", "mcf", "mk3d", "mkv", "mov", "mp4",
+      "mpe", "mpeg", "mpg",
+      "mts", "mxf", "ogm", "ogv", "qt", "rm", "rmvb", "swf", "ts", "vob",
+      "webm", "wmv", "xvid", "y4m", "yuv",
+    ]),
+    [FILE_TYPES.AUDIO]: new Set([
+      "aa3", "aac", "ac3", "acm", "aif", "aifc", "aiff", "alac", "amr", "ape",
+      "au", "caf", "dts", "eac3", "f4a", "f4b", "flac", "m4a", "m4b", "mka",
+      "mp2", "mp3", "oga", "ogg", "opus", "pcm", "ra", "snd", "tak", "tta",
+      "vox", "wav", "wave", "wma", "wv",
+    ]),
+    [FILE_TYPES.IMAGE]: new Set([
+      "apng", "avif", "bmp", "exr", "gif", "heic", "heif", "ico", "jfif", "jp2",
+      "jpe", "jpeg", "jpg", "jxl", "pbm", "pgm", "png", "ppm", "psd", "qoi",
+      "svg", "tga", "tif", "tiff", "webp",
+    ]),
   });
 
   const SKIP_DIRECTORIES = new Set([
@@ -66,6 +84,11 @@ const QuickFoldersFileTypes = (() => {
     return FILE_TYPES.OTHER;
   }
 
+  function getSupportedExtensions(fileType) {
+    const extensions = EXTENSIONS_BY_TYPE[fileType];
+    return extensions ? Array.from(extensions).sort() : [];
+  }
+
   function isPlayableFile(filename) {
     if (!filename || String(filename).startsWith(".")) return false;
     const extension = getExtension(filename);
@@ -88,6 +111,7 @@ const QuickFoldersFileTypes = (() => {
     SKIP_DIRECTORIES,
     getExtension,
     getFileTypeByExt,
+    getSupportedExtensions,
     isPlayableFile,
     normalizeExtension,
     shouldShowFile,

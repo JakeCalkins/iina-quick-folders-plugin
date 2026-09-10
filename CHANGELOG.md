@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _No unreleased changes yet._
 
+## [2.4.0] - 2026-09-10
+
+### Added
+- Expanded the IINA-compatible video, audio, and image formats available for browsing and filtering
+- Added lazy codec, bitrate, sample-rate, and channel chips alongside duration and resolution
+- Added generated preview artwork for media without a native thumbnail, with optional local `ffmpeg` frame and embedded-art extraction for non-native formats
+- Added window-level arrow-key navigation, Shift-arrow range selection, `/` search focus, and Enter activation for focused media
+- Added a persistent drag-and-drop media queue with multi-selection, multi-item reordering, an expandable editor, and native IINA playlist playback
+
+### Changed
+- Made a plain file click play immediately, while modifier-click, the selection control, and Space provide predictable multi-selection
+- Bounded thumbnail work with type-aware Quick Look, image resizing, safe temporary cleanup, deduplication, and in-memory caching
+- Restyled metadata chips as quiet, borderless labels with adaptive light and dark appearance
+- Kept indexing non-blocking and reduced repeated index transfers and list rebuilding during navigation and selection
+
+### Fixed
+- Polished file and queue drag-and-drop with compact drag previews, a labeled queue target, clearer source feedback, and more visible reorder positions.
+- Restored immediate media previews during slow native thumbnail extraction, prioritized metadata chips, clarified queue action buttons, and prevented the root-folder Remove label from clipping
+- Restored back-button, root-bounded breadcrumb, file-filter, and local browser-message interactions that could be lost during WebKit rerenders
+- Prevented native text selection while building a multi-file selection
+- Fixed thumbnail reads that incorrectly treated IINA's directory-relative result paths as filesystem-root paths
+- Avoided unbounded Quick Look work for unsupported containers such as MKV
+- Prevented lazy thumbnails and metadata chips from disappearing when IINA suspends animations or replaces the standalone WebView
+- Kept row hover treatments and the expanding root-folder Remove button inside the scroll viewport
+- Kept the complete interface usable at narrow window widths, including header, selection, queue, search, and confirmation controls
+- Kept browsing, selection, dragging, search, and filtering available while the search index refreshes, with compact non-blocking progress
+- Made Shift-arrow queue selection include the initially focused row
+- Isolated **Watch Queue** in a managed IINA player, then verified and repaired the native playlist after folder autoload so only queued items play in the requested order
+
+### Security
+- Reduced the plugin manifest to its required filesystem permission, removed persistent path-bearing diagnostics, and tightened configured-root path validation
+
 ## [2.3.5] - 2026-09-10
 
 ### Fixed

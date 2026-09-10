@@ -31,7 +31,8 @@ See the [installation guide](docs/INSTALLATION.md) for upgrades, uninstalling, d
 1. Press `⌘ ⇧ K` while IINA is active to open Quick Folders.
 2. Press `N` or choose **Add Folder**, then select a media folder.
 3. Browse the folder or use search and the file-type filter.
-4. Double-click a file, or select it and press `Return`, to play it.
+4. Click a file to play it. Use `⌘`/`Ctrl`-click, Shift-click, or the row's selection control to build a selection for bulk actions.
+5. Drag one file—or a multi-selection—onto the queue button in the bottom bar. Open the queue to reorder it, then choose **Watch Queue** to open an ordered native IINA playlist containing only those files.
 
 Open **IINA → Settings → Plugins → Quick Folders → Settings** to change shortcuts, media filters, watched-file behavior, and indexing depth.
 
@@ -40,8 +41,10 @@ Open **IINA → Settings → Plugins → Quick Folders → Settings** to change 
 - User-defined media roots with nested-folder navigation
 - Fast fuzzy search across the configured index
 - Video, audio, image, and extension filters
-- Lazy thumbnail, duration, resolution, type, and file-size metadata
-- Finder-style single, range, toggle, and select-all behavior
+- Lazy native thumbnails, generated fallbacks, and optional local `ffmpeg` previews for non-native media
+- Duration, resolution, codec, bitrate, sample-rate, channel, type, and file-size chips when available
+- Modifier, range, keyboard, and select-all multi-selection behavior
+- Persistent drag-and-drop queue with multi-item reordering and native IINA playlist playback
 - Bulk watched/unwatched actions and an optional Watched folder
 - Permanent deletion with confirmation
 - Light/dark appearance and reduced-motion support
@@ -54,8 +57,12 @@ Open **IINA → Settings → Plugins → Quick Folders → Settings** to change 
 | `⌘ ⇧ K` | Open Quick Folders (configurable) |
 | `N` | Add a folder (configurable) |
 | `/` or `⌘/Ctrl F` | Focus search |
-| `Return` | Open the selected file |
+| `↑` / `↓` | Move focus through folders and media |
+| `Shift ↑` / `Shift ↓` | Extend the media selection |
+| `Return` | Open the focused file or sole selected file |
+| `Space` | Toggle the focused file in the selection |
 | `⌘/Ctrl A` | Select all visible files |
+| `Q` | Add selected files to the queue |
 | `W` | Mark selected files watched or unwatched |
 | `Delete` or `Backspace` | Delete selected files after confirmation |
 | `Escape` | Clear selection or close a dialog |
@@ -93,7 +100,7 @@ Release history and pending changes are maintained in [CHANGELOG.md](CHANGELOG.m
 - Use the repository’s structured [issue forms](https://github.com/JakeCalkins/iina-quick-folders-plugin/issues/new/choose) for bugs and features.
 - Report security-sensitive problems according to [SECURITY.md](SECURITY.md), not in a public issue.
 
-Quick Folders works with local paths you choose and requires IINA’s filesystem permission. Deletion actions are permanent and always require confirmation.
+Quick Folders works with local paths you choose and requires IINA’s filesystem permission. It does not request network access or persist diagnostic logs containing media paths. Deletion actions are permanent and always require confirmation.
 
 ## License
 

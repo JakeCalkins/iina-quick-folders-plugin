@@ -12,11 +12,12 @@ const QuickFoldersBrowseState = (() => {
   }
 
   function isPathWithinRoots(path, roots) {
-    if (typeof path !== "string" || path.length === 0) return false;
+    if (typeof path !== "string" || !path.startsWith("/")) return false;
     if (path.includes("\0") || path.split("/").includes("..")) return false;
 
     return (Array.isArray(roots) ? roots : []).some((root) => {
       if (!root || typeof root.path !== "string") return false;
+      if (!root.path.startsWith("/") || root.path.includes("\0") || root.path.split("/").includes("..")) return false;
       const rootPath = root.path === "/" ? "/" : root.path.replace(/\/+$/, "");
       return rootPath === "/"
         ? path.startsWith("/")

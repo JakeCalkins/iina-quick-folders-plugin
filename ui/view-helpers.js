@@ -52,10 +52,16 @@ const QuickFoldersView = (() => {
     return `${text.substring(0, sideLength)}...${text.substring(text.length - sideLength)}`;
   }
 
-  function getBreadcrumbSegments(currentPath) {
+  function getBreadcrumbSegments(currentPath, rootPath) {
     const fullSegments = String(currentPath || "").split("/").filter(Boolean);
+    const rootSegments = String(rootPath || "").split("/").filter(Boolean);
+    const hasMatchingRoot = rootSegments.length > 0
+      && rootSegments.every((segment, index) => fullSegments[index] === segment);
     const startsInUserHome = fullSegments[0] === "Users" && fullSegments.length > 2;
-    const visibleStart = startsInUserHome ? 2 : 0;
+    // Navigation is deliberately bounded to the configured root. Displaying
+    // ancestors as buttons made them look broken because the backend correctly
+    // rejects paths outside that security boundary.
+    const visibleStart = hasMatchingRoot ? rootSegments.length - 1 : (startsInUserHome ? 2 : 0);
     return fullSegments.slice(visibleStart).map((name, index) => ({
       label: truncateMiddle(name),
       path: `/${fullSegments.slice(0, visibleStart + index + 1).join("/")}`,

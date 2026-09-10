@@ -7,18 +7,15 @@ const spinnerContainer = document.getElementById("spinner-container");
 const searchBar = document.getElementById("search-bar");
 const progressBar = document.getElementById("progress-bar");
 const progressText = document.getElementById("progress-text");
-const indexingModal = document.getElementById("indexing-modal");
-const modalProgressBar = document.getElementById("modal-progress-bar");
-const modalProgressText = document.getElementById("modal-progress-text");
 function registerBackendMessages() {
-  if (typeof iina === "undefined" || !iina.onMessage) return;
-  iina.onMessage("index-building", handleIndexBuilding);
-  iina.onMessage("index-progress", handleIndexProgress);
-  iina.onMessage("index-complete", handleIndexComplete);
-  iina.onMessage("update-items", handleStateUpdate);
-  iina.onMessage("item-action-result", (result) => handleItemActionResult(result || {}));
-  iina.onMessage("thumbnail-ready", mediaPreview.handleThumbnailReady);
-  iina.onMessage("media-metadata-ready", mediaPreview.handleMetadataReady);
+  QuickFoldersMessaging.onMessage("index-building", handleIndexBuilding);
+  QuickFoldersMessaging.onMessage("index-progress", handleIndexProgress);
+  QuickFoldersMessaging.onMessage("index-complete", handleIndexComplete);
+  QuickFoldersMessaging.onMessage("update-items", handleStateUpdate);
+  QuickFoldersMessaging.onMessage("item-action-result", (result) => handleItemActionResult(result || {}));
+  QuickFoldersMessaging.onMessage("queue-action-result", (result) => handleQueueActionResult(result || {}));
+  QuickFoldersMessaging.onMessage("thumbnail-ready", mediaPreview.handleThumbnailReady);
+  QuickFoldersMessaging.onMessage("media-metadata-ready", mediaPreview.handleMetadataReady);
 }
 
 const itemListEl = document.getElementById("item-list");
@@ -37,6 +34,7 @@ const otherGroup = document.getElementById("other-group");
 const depthWarning = document.getElementById("depth-warning");
 const actionBar = document.getElementById("action-bar");
 const selectionCount = document.getElementById("selection-count");
+const queueSelectionBtn = document.getElementById("queue-selection-btn");
 const watchBtn = document.getElementById("watch-btn");
 const deleteBtn = document.getElementById("delete-btn");
 const cancelSelectionBtn = document.getElementById("cancel-selection-btn");
@@ -49,20 +47,32 @@ const closeHelpBtn = document.getElementById("close-help-btn");
 const openWindowShortcut = document.getElementById("open-window-shortcut");
 const addFolderShortcut = document.getElementById("add-folder-shortcut");
 const toast = document.getElementById("toast");
-const pane = document.querySelector(".pane");
+const appShell = document.getElementById("app-shell");
+const queuePanel = document.getElementById("queue-panel");
+const queueBucket = document.getElementById("queue-bucket");
+const queueBadge = document.getElementById("queue-badge");
+const queueList = document.getElementById("queue-list");
+const queueCount = document.getElementById("queue-count");
+const queueClearBtn = document.getElementById("queue-clear-btn");
+const queueRemoveSelectedBtn = document.getElementById("queue-remove-selected-btn");
+const queueCloseBtn = document.getElementById("queue-close-btn");
+const queuePlayBtn = document.getElementById("queue-play-btn");
 
 setTimeout(() => {
   if (!messageReceived) setIndexingUi(false);
 }, 100);
 
 let currentFilter = "all";
+let renderedExtensionOptionsKey = null;
 let currentSearchQuery = "";
 let compiledSearchQuery = QuickFoldersSearch.compileQuery("");
 let availableExtensions = [];
 let searchRenderTimer = null;
 let selectedPaths = new Set();
 let selectionAnchorPath = null;
+let focusedPath = null;
 let visibleItems = [];
+let renderedItems = [];
 let actionPending = false;
 let toastTimer = null;
 let breadcrumbLayoutTimer = null;
@@ -86,58 +96,82 @@ let currentState = {
 
 const mediaPreview = QuickFoldersMediaPreview.create({
   rootElement: itemListEl,
-  sendMessage: postMessage,
+  sendMessage: QuickFoldersMessaging.send,
   thumbnailCacheLimit: 200,
   metadataCacheLimit: 500,
 });
 const browseModel = QuickFoldersBrowseModel.create({ maxSearchResults: MAX_RENDERED_SEARCH_RESULTS });
+const interactions = QuickFoldersInteractions.create({
+  sendMessage: QuickFoldersMessaging.send,
+  resetBrowseContext() {
+    resetSearch();
+  },
+  changeFilter(filter) {
+    clearSelection(false);
+    currentFilter = filter;
+    renderItems();
+  },
+});
+const queueController = QuickFoldersQueueController.create({
+  panel: queuePanel,
+  toggleButton: queueBucket,
+  badge: queueBadge,
+  list: queueList,
+  count: queueCount,
+  clearButton: queueClearBtn,
+  removeButton: queueRemoveSelectedBtn,
+  closeButton: queueCloseBtn,
+  playButton: queuePlayBtn,
+  sendMessage: QuickFoldersMessaging.send,
+  onOpenChange(open) {
+    QuickFoldersMessaging.send("queue-panel-open", { open });
+  },
+});
 const deleteDialog = QuickFoldersDialogs.create({
   element: deleteModal,
-  initialFocus: confirmDeleteBtn,
+  // Default to the reversible choice so an accidental Return cannot delete.
+  initialFocus: cancelDeleteBtn,
   closeButtons: [cancelDeleteBtn],
-  inertTarget: pane,
+  inertTarget: appShell,
 });
 const helpDialog = QuickFoldersDialogs.create({
   element: helpModal,
   trigger: helpBtn,
   initialFocus: closeHelpBtn,
   closeButtons: [closeHelpBtn],
-  inertTarget: pane,
+  inertTarget: appShell,
   toggleKey: "?",
 });
 
-function setIndexingUi(isBuilding, indexReady = true) {
+function setIndexingUi(isBuilding) {
   spinnerContainer.classList.toggle("hidden", !isBuilding);
-  if (isBuilding || indexReady) searchBar.classList.toggle("hidden", isBuilding);
+  // Browsing and the last published search index remain useful during a
+  // refresh, so progress must not replace the footer controls.
+  searchBar.classList.remove("hidden");
   if (refreshBtn) refreshBtn.disabled = isBuilding;
   itemListEl.setAttribute("aria-busy", String(isBuilding));
 }
 
 function handleIndexBuilding() {
   setIndexingUi(true);
-  if (progressBar) progressBar.style.width = "0%";
+  if (progressBar) {
+    progressBar.style.width = "35%";
+    progressBar.classList.add("indeterminate");
+  }
   if (progressText) progressText.textContent = "Indexing...";
 }
 
 function handleIndexProgress(data) {
   if (!data || !data.progress) return;
   const filesProcessed = Number(data.progress.filesProcessed) || 0;
-  const visualProgress = Math.min(filesProcessed % 100, 99);
-  if (filesProcessed > 50 && indexingModal) {
-    indexingModal.classList.remove("hidden");
-    if (modalProgressText) modalProgressText.textContent = `Processing: ${filesProcessed} files found`;
-    if (modalProgressBar) modalProgressBar.style.width = `${visualProgress}%`;
-  }
   if (progressText) progressText.textContent = `Indexing: ${filesProcessed} files found`;
-  if (progressBar) progressBar.style.width = `${visualProgress}%`;
 }
 
 function handleIndexComplete() {
-  if (progressBar) progressBar.style.width = "100%";
-  if (modalProgressBar) modalProgressBar.style.width = "100%";
-  setTimeout(() => {
-    if (indexingModal) indexingModal.classList.add("hidden");
-  }, 500);
+  if (progressBar) {
+    progressBar.classList.remove("indeterminate");
+    progressBar.style.width = "100%";
+  }
   setIndexingUi(false);
 }
 
@@ -152,37 +186,49 @@ function handleStateUpdate(state) {
   availableExtensions = nextState.availableExtensions || [];
   browseModel.updateIndex(nextState.indexedFiles, nextState.indexRevision);
   if (nextState.preferences) currentPreferences = { ...currentPreferences, ...nextState.preferences };
+  queueController.setItems(nextState.queueItems || []);
   updateHelpShortcuts();
-  setIndexingUi(Boolean(nextState.isIndexing), Boolean(nextState.indexReady));
+  setIndexingUi(Boolean(nextState.isIndexing));
   populateExtensionDropdown();
   renderItems();
   messageReceived = true;
 }
 
 function populateExtensionDropdown() {
+  // Index replacement is atomic, but an in-progress state may temporarily
+  // report no extensions. Keep the last usable native menu until completion.
+  if (currentState.isIndexing && renderedExtensionOptionsKey !== null && availableExtensions.length === 0) {
+    filterDropdown.value = currentFilter;
+    return;
+  }
   const extensionGroups = QuickFoldersBrowseState.groupAvailableExtensions(
     availableExtensions,
     currentPreferences
   );
-  [
-    [videoGroup, extensionGroups.video],
-    [audioGroup, extensionGroups.audio],
-    [imageGroup, extensionGroups.image],
-    [otherGroup, []],
-  ].forEach(([group, extensions]) => {
-    group.innerHTML = "";
-    extensions.forEach((extension) => {
-      const option = document.createElement("option");
-      option.value = `ext:${extension}`;
-      option.textContent = extension.toUpperCase();
-      group.appendChild(option);
+  // Replacing options while WebKit's native menu is open dismisses it. State
+  // updates are frequent, so rebuild only when the available choices change.
+  const optionsKey = JSON.stringify(extensionGroups);
+  if (optionsKey !== renderedExtensionOptionsKey) {
+    [
+      [videoGroup, extensionGroups.video],
+      [audioGroup, extensionGroups.audio],
+      [imageGroup, extensionGroups.image],
+      [otherGroup, []],
+    ].forEach(([group, extensions]) => {
+      group.innerHTML = "";
+      extensions.forEach((extension) => {
+        const option = document.createElement("option");
+        option.value = `ext:${extension}`;
+        option.textContent = extension.toUpperCase();
+        group.appendChild(option);
+      });
+      group.hidden = extensions.length === 0;
     });
-  });
+    renderedExtensionOptionsKey = optionsKey;
+  }
 
   const reconciledFilter = QuickFoldersBrowseState.reconcileExtensionFilter(currentFilter, extensionGroups);
-  if (!(currentState.isIndexing && currentFilter !== "all" && reconciledFilter === "all")) {
-    currentFilter = reconciledFilter;
-  }
+  currentFilter = reconciledFilter;
   filterDropdown.value = currentFilter;
 }
 
@@ -197,21 +243,94 @@ function getSelectedItems() {
 function clearSelection(shouldRender = true) {
   selectedPaths.clear();
   selectionAnchorPath = null;
-  if (shouldRender) renderItems();
+  if (shouldRender) refreshSelectionPresentation();
 }
 
-function selectItem(item, event) {
+function refreshSelectionPresentation() {
+  const itemsByPath = new Map(renderedItems.map((item) => [item.path, item]));
+  itemListEl.querySelectorAll(".row[data-path]").forEach((row) => {
+    const item = itemsByPath.get(row.dataset.path);
+    if (!item || item.isDir) return;
+    const selected = selectedPaths.has(item.path);
+    row.classList.toggle("selected", selected);
+    row.setAttribute("aria-selected", String(selected));
+    row.setAttribute(
+      "aria-label",
+      `${QuickFoldersView.getDisplayName(item)}, ${selected ? "selected" : "not selected"}`,
+    );
+    const indicator = row.querySelector(".selection-indicator");
+    if (indicator) indicator.title = selected ? "Deselect file" : "Select file";
+  });
+  updateActionBar();
+}
+
+function selectItem(item, event, behavior = {}) {
+  const shouldRestoreFocus = behavior.restoreFocus || (
+    document.activeElement &&
+    document.activeElement.dataset &&
+    document.activeElement.dataset.path === item.path
+  );
   const result = QuickFoldersBrowseState.updateSelection({
     visiblePaths: getSelectableItems().map((entry) => entry.path),
     selectedPaths: Array.from(selectedPaths),
     anchorPath: selectionAnchorPath,
     targetPath: item.path,
-    additive: Boolean(event.metaKey || event.ctrlKey),
+    additive: Boolean(behavior.additive || event.metaKey || event.ctrlKey),
     range: Boolean(event.shiftKey),
   });
   selectedPaths = new Set(result.selectedPaths);
   selectionAnchorPath = result.anchorPath;
-  renderItems();
+  focusedPath = item.path;
+  refreshSelectionPresentation();
+  if (shouldRestoreFocus) focusItem(item.path);
+}
+
+function focusItem(path) {
+  const rows = itemListEl.querySelectorAll(".row[data-path]");
+  const row = Array.from(rows).find((candidate) => candidate.dataset.path === path);
+  if (!row) return;
+  rows.forEach((candidate) => {
+    candidate.tabIndex = candidate === row ? 0 : -1;
+  });
+  row.focus();
+}
+
+function moveItemFocus(item, key, { extendSelection = false } = {}) {
+  const currentPath = item && item.path ? item.path : focusedPath;
+  const target = QuickFoldersInteractions.getNavigationTarget(renderedItems, currentPath, key);
+  if (!target) return false;
+
+  if (extendSelection && !target.isDir) {
+    const currentItem = renderedItems.find((candidate) => candidate.path === currentPath);
+    const anchorPath = selectionAnchorPath
+      || (currentItem && !currentItem.isDir ? currentItem.path : target.path);
+    const result = QuickFoldersBrowseState.updateSelection({
+      visiblePaths: renderedItems.filter((entry) => !entry.isDir).map((entry) => entry.path),
+      selectedPaths: Array.from(selectedPaths),
+      anchorPath,
+      targetPath: target.path,
+      additive: false,
+      range: true,
+    });
+    selectedPaths = new Set(result.selectedPaths);
+    selectionAnchorPath = anchorPath;
+    focusedPath = target.path;
+    refreshSelectionPresentation();
+  } else {
+    focusedPath = target.path;
+  }
+  focusItem(focusedPath);
+  return true;
+}
+
+function openFocusedOrSelectedItem() {
+  const focusedItem = renderedItems.find((item) => item.path === focusedPath);
+  const selectedItems = getSelectedItems();
+  const item = focusedItem || (selectedItems.length === 1 ? selectedItems[0] : null);
+  if (!item) return false;
+  if (item.isDir) interactions.openFolder(item);
+  else QuickFoldersMessaging.send("open-item", { path: item.path, isDir: false });
+  return true;
 }
 
 function updateActionBar() {
@@ -227,6 +346,13 @@ function updateActionBar() {
   watchBtn.title = `${watchBtn.textContent} (W)`;
   watchBtn.disabled = actionPending;
   deleteBtn.disabled = actionPending;
+  queueSelectionBtn.disabled = actionPending;
+}
+
+function addSelectedToQueue() {
+  const items = getSelectedItems();
+  if (items.length === 0) return;
+  QuickFoldersMessaging.send("queue-add", { paths: items.map((item) => item.path) });
 }
 
 function setSelectedWatched() {
@@ -236,13 +362,7 @@ function setSelectedWatched() {
   const watched = !items.every((item) => item.watched);
   actionPending = true;
   updateActionBar();
-  postMessage("set-watched", { paths: items.map((item) => item.path), watched });
-}
-
-function openSelectedItem() {
-  const items = getSelectedItems();
-  if (items.length !== 1) return;
-  postMessage("open-item", { path: items[0].path, isDir: false });
+  QuickFoldersMessaging.send("set-watched", { paths: items.map((item) => item.path), watched });
 }
 
 function showDeleteConfirmation() {
@@ -306,6 +426,28 @@ function handleItemActionResult(result) {
   renderItems();
 }
 
+function handleQueueActionResult(result) {
+  const succeeded = Array.isArray(result.succeeded) ? result.succeeded : [];
+  const failed = Array.isArray(result.failed) ? result.failed : [];
+  const actionCopy = {
+    added: `${succeeded.length} item${succeeded.length === 1 ? "" : "s"} added to queue`,
+    removed: `${succeeded.length} item${succeeded.length === 1 ? "" : "s"} removed from queue`,
+    cleared: "Queue cleared",
+    played: `Playing ${succeeded.length} queued item${succeeded.length === 1 ? "" : "s"}`,
+  };
+  if (succeeded.length > 0) {
+    showToast(actionCopy[result.action] || "Queue updated");
+    if (result.action === "added") {
+      queueBucket.classList.remove("just-added");
+      requestAnimationFrame(() => queueBucket.classList.add("just-added"));
+    }
+  }
+  if (failed.length > 0) {
+    const reason = failed[0] && failed[0].reason;
+    showToast(reason || `${failed.length} queued item${failed.length === 1 ? "" : "s"} could not be used`, true);
+  }
+}
+
 function deleteSelectedItems() {
   if (actionPending) return;
   const items = getSelectedItems();
@@ -313,7 +455,7 @@ function deleteSelectedItems() {
   hideDeleteConfirmation();
   actionPending = true;
   updateActionBar();
-  postMessage("delete-items", { paths: items.map((item) => item.path) });
+  QuickFoldersMessaging.send("delete-items", { paths: items.map((item) => item.path) });
 }
 
 function resetSearch({ focus = false, render = false } = {}) {
@@ -328,34 +470,29 @@ function resetSearch({ focus = false, render = false } = {}) {
     searchInput.value = "";
     if (focus) searchInput.focus();
   }
+  if (clearSearchBtn) clearSearchBtn.disabled = true;
   if (render) renderItems();
 }
 
 function drawBreadcrumbSegments(segments) {
   breadcrumb.innerHTML = "";
+  const parentElements = [];
   segments.forEach((segment, index) => {
     const isCurrent = index === segments.length - 1;
-    const element = document.createElement("span");
+    const element = document.createElement(isCurrent ? "span" : "button");
     element.className = isCurrent ? "breadcrumb-current" : "breadcrumb-parent";
     element.textContent = segment.label;
     element.title = segment.path;
 
     if (!isCurrent) {
-      element.setAttribute("role", "button");
+      element.type = "button";
       const destinationName = segment.path.split("/").pop() || segment.path;
       element.setAttribute("aria-label", `Go to ${destinationName}`);
-      element.tabIndex = 0;
       const navigate = () => {
-        resetSearch();
-        postMessage("navigate-to", { path: segment.path });
+        interactions.navigateTo(segment.path);
       };
       element.addEventListener("click", navigate);
-      element.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          navigate();
-        }
-      });
+      parentElements.push(element);
     }
     breadcrumb.appendChild(element);
 
@@ -366,6 +503,7 @@ function drawBreadcrumbSegments(segments) {
       breadcrumb.appendChild(separator);
     }
   });
+  return parentElements;
 }
 
 function renderBreadcrumb() {
@@ -387,17 +525,20 @@ function renderBreadcrumb() {
     return;
   }
 
-  const segments = QuickFoldersView.getBreadcrumbSegments(currentState.currentPath);
+  const segments = QuickFoldersView.getBreadcrumbSegments(
+    currentState.currentPath,
+    currentState.currentRootPath,
+  );
   breadcrumb.title = currentState.currentPath;
-  drawBreadcrumbSegments(segments);
+  const parentElements = drawBreadcrumbSegments(segments);
 
-  // Layout is available on the next task. Collapse only parent labels, keeping
-  // their original target paths so visual truncation cannot alter navigation.
+  // Layout is available on the next task. Mutate labels in place rather than
+  // replacing the nodes: replacing a breadcrumb between pointer-down and
+  // pointer-up causes WebKit to discard the click.
   breadcrumbLayoutTimer = setTimeout(() => {
     breadcrumbLayoutTimer = null;
     for (let index = 0; index < segments.length - 1 && breadcrumb.scrollWidth > breadcrumb.clientWidth; index++) {
-      segments[index] = { ...segments[index], label: ".." };
-      drawBreadcrumbSegments(segments);
+      parentElements[index].textContent = "..";
     }
   }, 0);
 }
@@ -423,6 +564,7 @@ function renderItems() {
   const selectablePaths = new Set(filteredItems.filter((item) => !item.isDir).map((item) => item.path));
   selectedPaths = new Set(Array.from(selectedPaths).filter((path) => selectablePaths.has(path)));
   if (selectionAnchorPath && !selectablePaths.has(selectionAnchorPath)) selectionAnchorPath = null;
+  if (focusedPath && !filteredItems.some((item) => item.path === focusedPath)) focusedPath = null;
 
   itemListEl.innerHTML = "";
   updateActionBar();
@@ -440,6 +582,7 @@ function renderItems() {
   renderBreadcrumb();
 
   if (filteredItems.length === 0) {
+    renderedItems = [];
     appendEmptyMessage(QuickFoldersView.getEmptyMessage({
       state: currentState,
       query: currentSearchQuery,
@@ -458,28 +601,43 @@ function renderItems() {
 
   const groupedItems = QuickFoldersBrowseState.partitionWatched(filteredItems);
   const orderedItems = groupedItems.active.concat(groupedItems.watched);
+  renderedItems = orderedItems;
   const fragment = document.createDocumentFragment();
   const itemViewOptions = {
     atRoot: currentState.atRoot,
     hasSearchQuery: Boolean(currentSearchQuery),
-    isIndexing: currentState.isIndexing,
     mediaPreview,
     selectedPaths,
+    focusedPath: focusedPath || (orderedItems[0] && orderedItems[0].path),
     onOpenFolder(folder) {
-      clearSelection(false);
-      postMessage("open-item", {
-        path: folder.path,
-        isDir: true,
-        isWatchedRoot: Boolean(folder.isWatchedRoot),
-      });
+      interactions.openFolder(folder);
     },
     onOpenFile(file) {
-      postMessage("open-item", { path: file.path, isDir: false });
+      QuickFoldersMessaging.send("open-item", { path: file.path, isDir: false });
     },
     onRemoveRoot(folder) {
-      postMessage("remove-root", { path: folder.path });
+      QuickFoldersMessaging.send("remove-root", { path: folder.path });
     },
+    onFocusItem(item) {
+      focusedPath = item.path;
+      itemListEl.querySelectorAll(".row[data-path]").forEach((row) => {
+        row.tabIndex = row.dataset.path === focusedPath ? 0 : -1;
+      });
+    },
+    onMoveFocus: moveItemFocus,
     onSelectFile: selectItem,
+    onDragFiles(item, event) {
+      const paths = QuickFoldersQueueState.getDraggedPaths(
+        orderedItems.filter((entry) => !entry.isDir).map((entry) => entry.path),
+        Array.from(selectedPaths),
+        item.path,
+      );
+      queueController.startExternalDrag(event, paths, QuickFoldersView.getDisplayName(item));
+      return paths;
+    },
+    onDragEnd() {
+      queueController.endExternalDrag();
+    },
   };
 
   orderedItems.forEach((item, itemIndex) => {
@@ -496,24 +654,36 @@ function renderItems() {
     fragment.appendChild(QuickFoldersItemView.create(item, itemViewOptions));
   });
   itemListEl.appendChild(fragment);
+  // IINA can reopen this WebView after it was hidden for playback. WebKit does
+  // not always deliver a fresh IntersectionObserver callback on that resume,
+  // so explicitly sample only the visible/preload region after layout.
+  requestAnimationFrame(() => mediaPreview.requestVisible());
 }
+
+window.addEventListener("focus", () => {
+  requestAnimationFrame(() => mediaPreview.requestVisible());
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) requestAnimationFrame(() => mediaPreview.requestVisible());
+});
 
 // Back button handler
 backBtn.addEventListener("click", () => {
-  postMessage("go-back");
+  interactions.goBack();
 });
 
 // Add Folder button handler
 if (addFolderBtn) {
   addFolderBtn.addEventListener("click", () => {
-    postMessage("add-folder");
+    QuickFoldersMessaging.send("add-folder");
   });
 }
 
 // Refresh button handler
 if (refreshBtn) {
   refreshBtn.addEventListener("click", () => {
-    postMessage("refresh-index");
+    QuickFoldersMessaging.send("refresh-index");
   });
 }
 
@@ -529,6 +699,7 @@ if (searchInput) {
   searchInput.addEventListener("input", (e) => {
     clearSelection(false);
     currentSearchQuery = e.target.value;
+    if (clearSearchBtn) clearSearchBtn.disabled = currentSearchQuery.length === 0;
     compiledSearchQuery = QuickFoldersSearch.compileQuery(currentSearchQuery);
     if (searchRenderTimer) clearTimeout(searchRenderTimer);
     searchRenderTimer = setTimeout(() => {
@@ -547,14 +718,18 @@ if (clearSearchBtn) {
 
 // Filter dropdown handler
 if (filterDropdown) {
-  filterDropdown.addEventListener("change", (e) => {
-    clearSelection(false);
-    currentFilter = e.target.value;
-    renderItems();
-  });
+  const applyFilter = (event) => {
+    const nextFilter = event.currentTarget.value;
+    interactions.applyFilter(nextFilter, currentFilter);
+  };
+  // WebKit versions differ on whether native select commits arrive as input,
+  // change, or both. The idempotent handler supports each behavior.
+  filterDropdown.addEventListener("input", applyFilter);
+  filterDropdown.addEventListener("change", applyFilter);
 }
 
 if (watchBtn) watchBtn.addEventListener("click", setSelectedWatched);
+if (queueSelectionBtn) queueSelectionBtn.addEventListener("click", addSelectedToQueue);
 if (deleteBtn) deleteBtn.addEventListener("click", showDeleteConfirmation);
 if (cancelSelectionBtn) cancelSelectionBtn.addEventListener("click", () => clearSelection());
 if (confirmDeleteBtn) {
@@ -565,6 +740,7 @@ document.addEventListener("keydown", (event) => {
   if (deleteDialog.handleKeydown(event) || helpDialog.handleKeydown(event)) return;
 
   const target = event.target;
+  if (target && target.closest && target.closest("#queue-panel")) return;
   const isTyping = target && (
     target.tagName === "INPUT" || target.tagName === "SELECT" || target.tagName === "TEXTAREA"
   );
@@ -589,12 +765,18 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
+  if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    moveItemFocus(null, event.key, { extendSelection: event.shiftKey });
+    return;
+  }
+
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
     event.preventDefault();
     const paths = getSelectableItems().map((item) => item.path);
     selectedPaths = new Set(paths);
     selectionAnchorPath = paths[0] || null;
-    renderItems();
+    refreshSelectionPresentation();
   } else if (event.key === "Escape") {
     clearSelection();
   } else if (event.key === "Delete" || event.key === "Backspace") {
@@ -607,8 +789,13 @@ document.addEventListener("keydown", (event) => {
       event.preventDefault();
       setSelectedWatched();
     }
+  } else if (event.key.toLowerCase() === "q" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    if (selectedPaths.size > 0) {
+      event.preventDefault();
+      addSelectedToQueue();
+    }
   } else if (event.key === "Enter") {
-    openSelectedItem();
+    openFocusedOrSelectedItem();
   }
 });
 
@@ -616,11 +803,11 @@ document.addEventListener("keydown", (event) => {
 registerBackendMessages();
 
 // Request initial state from main.js
-postMessage("request-state");
+QuickFoldersMessaging.send("request-state");
 
 // Also request state after a delay to ensure we get updates
 setTimeout(() => {
-  postMessage("request-state");
+  QuickFoldersMessaging.send("request-state");
 }, 500);
 
 // Render initial empty state

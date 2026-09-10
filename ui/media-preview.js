@@ -33,14 +33,21 @@ const QuickFoldersMediaPreview = (() => {
 
     function showThumbnail(element, dataUrl) {
       if (!element || !dataUrl) return;
+      const previousImage = element.querySelector(".thumbnail-image");
+      if (previousImage) previousImage.remove();
       const image = document.createElement("img");
       image.className = "thumbnail-image";
       image.alt = "";
       image.draggable = false;
-      image.src = dataUrl;
-      element.textContent = "";
+      image.addEventListener("error", () => {
+        image.remove();
+        element.classList.remove("has-thumbnail");
+      }, { once: true });
+      // Keep the generated file-type icon underneath the image. It remains a
+      // useful fallback while decoding and if WebKit rejects a damaged image.
       element.appendChild(image);
       element.classList.add("has-thumbnail");
+      image.src = dataUrl;
     }
 
     function requestThumbnail(path) {
@@ -56,8 +63,10 @@ const QuickFoldersMediaPreview = (() => {
     }
 
     function requestMedia(path) {
-      requestThumbnail(path);
+      // Metadata is inexpensive and makes rows useful while native thumbnail
+      // extraction continues in the background.
       requestMetadata(path);
+      requestThumbnail(path);
     }
 
     function handleIntersections(entries) {
@@ -68,21 +77,32 @@ const QuickFoldersMediaPreview = (() => {
       });
     }
 
+    function requestVisible() {
+      if (!rootElement || typeof rootElement.getBoundingClientRect !== "function") return;
+      const rootBounds = rootElement.getBoundingClientRect();
+      if (rootBounds.width <= 0 || rootBounds.height <= 0) return;
+      const preloadMargin = 100;
+      thumbnailElements.forEach((element, path) => {
+        if (!element || typeof element.getBoundingClientRect !== "function") return;
+        const bounds = element.getBoundingClientRect();
+        if (bounds.bottom < rootBounds.top - preloadMargin || bounds.top > rootBounds.bottom + preloadMargin) return;
+        if (observer) observer.unobserve(element);
+        requestMedia(path);
+      });
+    }
+
     function renderMetadata(element, path) {
       element.querySelectorAll(".dynamic-metadata-chip").forEach((chip) => chip.remove());
       const metadata = metadataCache.get(path);
       if (!metadata) return;
 
-      const values = [
-        [QuickFoldersMediaMetadata.formatDuration(metadata.duration), "duration-chip", "Duration"],
-        [QuickFoldersMediaMetadata.formatResolution(metadata.width, metadata.height), "resolution-chip", "Resolution"],
-      ];
+      const fileType = QuickFoldersFileTypes.getFileTypeByExt(path);
+      const chips = QuickFoldersMediaMetadata.getMetadataChips(metadata, fileType);
       const insertionPoint = element.querySelector(".watched-tag, .size-chip, .path-metadata");
-      values.forEach(([value, className, title]) => {
-        if (!value) return;
+      chips.forEach(({ key, text, title }) => {
         const chip = document.createElement("span");
-        chip.className = `metadata-chip dynamic-metadata-chip ${className}`;
-        chip.textContent = value;
+        chip.className = `metadata-chip dynamic-metadata-chip ${key}-chip`;
+        chip.textContent = text;
         chip.title = title;
         if (insertionPoint) element.insertBefore(chip, insertionPoint);
         else element.appendChild(chip);
@@ -91,6 +111,11 @@ const QuickFoldersMediaPreview = (() => {
 
     function beginRender() {
       if (observer) observer.disconnect();
+      // A hidden or replaced IINA WebView can lose an in-flight reply. Allow
+      // the new render to ask again; the backend loader still deduplicates and
+      // serves completed work from its bounded cache.
+      pendingThumbnails.clear();
+      pendingMetadata.clear();
       thumbnailElements.clear();
       metadataElements.clear();
     }
@@ -151,8 +176,13 @@ const QuickFoldersMediaPreview = (() => {
       handleThumbnailReady,
       loadThumbnail,
       remove,
+      requestVisible,
     };
   }
 
   return { create };
 })();
+
+if (typeof module !== "undefined") {
+  module.exports = QuickFoldersMediaPreview;
+}

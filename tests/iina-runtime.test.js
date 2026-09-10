@@ -28,10 +28,18 @@ test("shared modules export through IINA's empty CommonJS wrapper", () => {
   const fileTypes = load("file-types.js");
   const browseState = load("browse-state.js");
   const metadata = load("media-metadata.js");
+  const queuePlayback = load("queue-playback.js");
+  const queueState = load("queue-state.js");
+  const thumbnailService = load("thumbnail-service.js");
+  const mediaPreview = load("ui/media-preview.js");
 
   assert.equal(fileTypes.getFileTypeByExt("mp4"), "video");
   assert.equal(browseState.isPathWithinRoots("/media/movie.mp4", [{ path: "/media" }]), true);
   assert.equal(metadata.formatDuration(65), "1:05");
+  assert.equal(typeof queuePlayback.create, "function");
+  assert.deepEqual(Array.from(queueState.addPaths(["a"], ["b"])), ["a", "b"]);
+  assert.equal(typeof thumbnailService.createThumbnailService, "function");
+  assert.equal(typeof mediaPreview.create, "function");
 });
 
 test("main entry registers normalized shortcuts and refreshes preference changes", () => {

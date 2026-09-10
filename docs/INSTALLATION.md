@@ -82,7 +82,9 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for the complete development workflow.
 
 ### Metadata or thumbnails are missing
 
-Metadata is loaded lazily for visible files using macOS services. Unsupported formats, unavailable Spotlight metadata, or Quick Look failures may leave some chips or thumbnails empty without preventing playback.
+Metadata and thumbnails load lazily only as files approach the visible list. Quick Folders uses Spotlight and Quick Look for native formats, resizes image previews with macOS tools, and always supplies generated artwork when no source preview is available.
+
+For formats macOS does not preview reliably, such as MKV, Quick Folders can also use an existing `ffmpeg`/`ffprobe` installation from Homebrew, Intel Homebrew, or MacPorts. These tools are optional: without them, playback still works and Quick Folders shows safe generated artwork plus any metadata macOS provides.
 
 ### The window looks stale after development changes
 
