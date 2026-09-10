@@ -35,6 +35,7 @@ rm -f -- "$archive" "$checksum"
     | zip -q -X "$archive" -@
 )
 unzip -tq "$archive"
+node "$script_dir/verify-plugin-package.mjs" "$archive"
 
 while IFS= read -r entry; do
   case "$entry" in

@@ -24,6 +24,8 @@ Releases are built and published by GitHub Actions. The release workflow tests t
 Do not create a tag until the release-preparation commit is on `main`.
 Do not create a GitHub release manually: the tag-triggered workflow creates it only after the package and checksum pass validation. `release:prepare` also increments IINA's integer `ghVersion` update counter.
 
+If a release is created manually while the tag workflow is still running, the workflow detects it and safely replaces its package and checksum instead of leaving an empty release.
+
 ## Publish
 
 Create and push an annotated tag that exactly matches the manifest version:
@@ -42,6 +44,7 @@ The **Release** workflow then:
 3. Builds `dist/quick-folders-v<version>.iinaplgz` and its SHA-256 checksum.
 4. Creates a signed GitHub build-provenance attestation for the package.
 5. Publishes a GitHub release with categorized, automatically generated notes.
+6. Downloads the published assets again, verifies their checksum, and validates the package using IINA's root-layout requirements.
 
 If validation fails, fix the source on `main` and create a new version. Do not move a published release tag.
 
