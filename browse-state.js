@@ -1,5 +1,5 @@
 const QuickFoldersBrowseState = (() => {
-  const FileTypes = typeof module !== "undefined" && module.exports
+  const FileTypes = typeof module !== "undefined"
     ? require("./file-types.js")
     : QuickFoldersFileTypes;
   function normalizePaths(paths) {
@@ -116,6 +116,6 @@ const QuickFoldersBrowseState = (() => {
   };
 })();
 
-if (typeof module !== "undefined" && module.exports) {
+if (typeof module !== "undefined") {
   module.exports = QuickFoldersBrowseState;
 }

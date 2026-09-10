@@ -73,7 +73,7 @@ let currentPreferences = {
   videoOnly: false,
   hideWatched: false,
   maxIndexDepth: 3,
-  openWindowShortcut: "cmd+shift+a",
+  openWindowShortcut: "cmd+shift+k",
   addFolderShortcut: "n",
 };
 

@@ -28,7 +28,7 @@ See the [installation guide](docs/INSTALLATION.md) for upgrades, uninstalling, d
 
 ## Quick start
 
-1. Press `⌘ ⇧ A` while IINA is active to open Quick Folders.
+1. Press `⌘ ⇧ K` while IINA is active to open Quick Folders.
 2. Press `N` or choose **Add Folder**, then select a media folder.
 3. Browse the folder or use search and the file-type filter.
 4. Double-click a file, or select it and press `Return`, to play it.
@@ -51,7 +51,7 @@ Open **IINA → Settings → Plugins → Quick Folders → Settings** to change 
 
 | Shortcut | Action |
 | --- | --- |
-| `⌘ ⇧ A` | Open Quick Folders (configurable) |
+| `⌘ ⇧ K` | Open Quick Folders (configurable) |
 | `N` | Add a folder (configurable) |
 | `/` or `⌘/Ctrl F` | Focus search |
 | `Return` | Open the selected file |

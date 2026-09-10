@@ -2,12 +2,17 @@ const { console, core, file, utils, menu, standaloneWindow, preferences } = iina
 const BrowseState = require("./browse-state.js");
 const FileTypes = require("./file-types.js");
 const MediaMetadata = require("./media-metadata.js");
+const KeyboardShortcuts = require("./ui/keyboard-shortcuts.js");
 const { createAsyncResourceLoader } = require("./async-resource-loader.js");
 
 
 const STATE_FILE = "@data/quick-folders-state.json";
 const DEBUG_LOG_FILE = "@data/quick-folders-debug.log";
 const DEFAULT_MAX_INDEX_DEPTH = 3;
+const DEFAULT_OPEN_WINDOW_SHORTCUT = "cmd+shift+k";
+const DEFAULT_ADD_FOLDER_SHORTCUT = "n";
+const LEGACY_OPEN_WINDOW_SHORTCUT = "cmd+shift+a";
+const SHORTCUT_REFRESH_INTERVAL = 1000;
 const THUMBNAIL_SIZE = 128;
 const MAX_THUMBNAILS_IN_MEMORY = 200;
 const MAX_CONCURRENT_THUMBNAILS = 2;
@@ -573,9 +578,24 @@ function getPreferencesSnapshot() {
     videoOnly: preferences.get("videoOnly") ?? false,
     hideWatched: preferences.get("hideWatched") ?? false,
     maxIndexDepth: preferences.get("maxIndexDepth") ?? DEFAULT_MAX_INDEX_DEPTH,
-    openWindowShortcut: preferences.get("openWindowShortcut") ?? "cmd+shift+a",
-    addFolderShortcut: preferences.get("addFolderShortcut") ?? "n",
+    openWindowShortcut: getMenuShortcut("openWindowShortcut", DEFAULT_OPEN_WINDOW_SHORTCUT),
+    addFolderShortcut: getMenuShortcut("addFolderShortcut", DEFAULT_ADD_FOLDER_SHORTCUT),
   };
+}
+
+function getMenuShortcut(preferenceKey, fallback) {
+  return KeyboardShortcuts.resolveMenuShortcut(preferences.get(preferenceKey), fallback);
+}
+
+function migrateLegacyOpenWindowShortcut() {
+  const configuredShortcut = preferences.get("openWindowShortcut");
+  if (
+    KeyboardShortcuts.normalizeMenuShortcut(configuredShortcut)
+    !== KeyboardShortcuts.normalizeMenuShortcut(LEGACY_OPEN_WINDOW_SHORTCUT)
+  ) return;
+
+  preferences.set("openWindowShortcut", DEFAULT_OPEN_WINDOW_SHORTCUT);
+  preferences.sync();
 }
 
 function getCurrentFolderDepth() {
@@ -821,13 +841,27 @@ function openWindow() {
 }
 
 try {
-  const openWindowShortcut = preferences.get("openWindowShortcut") ?? "cmd+shift+a";
-  const addFolderShortcut = preferences.get("addFolderShortcut") ?? "n";
-  
-  const openItem = menu.item("Open Quick Folders Window", openWindow, { keyBinding: openWindowShortcut });
-  const addItem = menu.item("Add Folder", addFolder, { keyBinding: addFolderShortcut });
+  // The previous default collides with IINA's built-in Audio panel command.
+  migrateLegacyOpenWindowShortcut();
+  const openItem = menu.item("Open Quick Folders Window", openWindow, {
+    keyBinding: getMenuShortcut("openWindowShortcut", DEFAULT_OPEN_WINDOW_SHORTCUT),
+  });
+  const addItem = menu.item("Add Folder", addFolder, {
+    keyBinding: getMenuShortcut("addFolderShortcut", DEFAULT_ADD_FOLDER_SHORTCUT),
+  });
   menu.addItem(openItem);
   menu.addItem(addItem);
+
+  // IINA updates its preference store without reloading the running plugin.
+  // Poll the two inexpensive values so edited shortcuts take effect promptly.
+  setInterval(() => {
+    const nextOpenShortcut = getMenuShortcut("openWindowShortcut", DEFAULT_OPEN_WINDOW_SHORTCUT);
+    const nextAddShortcut = getMenuShortcut("addFolderShortcut", DEFAULT_ADD_FOLDER_SHORTCUT);
+    if (openItem.keyBinding === nextOpenShortcut && addItem.keyBinding === nextAddShortcut) return;
+    openItem.keyBinding = nextOpenShortcut;
+    addItem.keyBinding = nextAddShortcut;
+    menu.forceUpdate();
+  }, SHORTCUT_REFRESH_INTERVAL);
 } catch (err) {
   console.error("[Quick Folders] Failed to register menu shortcuts:", err);
 }

@@ -1,9 +1,9 @@
 // Owns index-derived search work so app.js can render a single prepared list.
 const QuickFoldersBrowseModel = (() => {
-  const Search = typeof module !== "undefined" && module.exports
+  const Search = typeof module !== "undefined"
     ? require("./search.js")
     : QuickFoldersSearch;
-  const BrowseState = typeof module !== "undefined" && module.exports
+  const BrowseState = typeof module !== "undefined"
     ? require("../browse-state.js")
     : QuickFoldersBrowseState;
 
@@ -81,6 +81,6 @@ const QuickFoldersBrowseModel = (() => {
   return { create };
 })();
 
-if (typeof module !== "undefined" && module.exports) {
+if (typeof module !== "undefined") {
   module.exports = QuickFoldersBrowseModel;
 }
