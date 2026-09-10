@@ -35,9 +35,9 @@ const SKIP_EXTENSIONS = new Set([
 const FILE_TYPE_ICONS = {
   video: "􀎶",
   audio: "􀑪",
-  image: "🖼",
+  image: "􀏅",
   folder: "􀈖",
-  file: "📄",
+  file: "􀈷",
 };
 
 function getFileTypeByExt(ext) {

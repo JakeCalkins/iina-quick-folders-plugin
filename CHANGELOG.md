@@ -10,6 +10,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Added adaptive colors for readable text and controls in macOS light mode
 
+## [2.2.2] - 2026-02-03
+
+### Added
+- Proper light mode support
+
+### Changed
+- Overhauled the entire file scanning, caching, and detection system
+    - Should be more reliable at identifying deeply nested subfolders with IINA-playable files
+    - Should omit more non-playable files (such as .DS_STORE, .plist and more)
+
+### Fixed
+- Small UI tweaks
+- Made all the file icons consistent (match flat style)
+
 ## [2.1.0] - 2026-01-04
 
 ### Added
@@ -25,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Documentation improvements for GitHub release
 
-## [2.0.0] - Previous Release
+## [2.0.0] - First GitHub Release
 
 ### Added
 - Initial release of Quick Folders plugin

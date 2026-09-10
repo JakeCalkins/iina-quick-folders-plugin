@@ -26,6 +26,16 @@ To remove: `iina-plugin unlink quick-folders.iinaplugin`.
 - Once directories are loaded and indexed, navigate using the UI or search to filter more efficiently.
 - Select media content by clicking on it. Close the Quick Folders window anytime with `Cmd + W` (Ctrl on Windows/Linux)
 
+### Search syntax
+
+Search is fuzzy by default, so abbreviated names and small typos can still match. You can combine multiple clauses:
+
+- `summer trip` matches files containing both fuzzy terms.
+- `"summer trip"` searches for that literal phrase.
+- `summer*.mp4` and `clip-??.mov` use `*` and `?` wildcards.
+- `summer -draft` excludes matches containing `draft`.
+- `ext:mp4`, `ext:m*`, and `-ext:mov` filter by file extension. Multiple positive `ext:` clauses are treated as alternatives.
+
 ## Packaging for sharing
 
 ```
