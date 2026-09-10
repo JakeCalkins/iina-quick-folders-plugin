@@ -28,6 +28,7 @@ To remove: `iina-plugin unlink quick-folders.iinaplugin`.
 - Select one file with a click, extend the selection with `Cmd`/`Ctrl`, or select a range with `Shift`. Double-click a file (or press `Enter`) to open it.
 - Use the selection action bar—or press `W`—to mark files watched. Watched files are dimmed and grouped at the bottom of each folder.
 - Press `Delete` or `Backspace` to permanently delete selected files after confirmation.
+- Press `?` or use the header help button for an in-app keyboard shortcut reference. Press `/` or `Cmd/Ctrl + F` to focus search.
 - Enable **Hide watched files while browsing** to replace watched items with a **Watched** folder at the Quick Folders root, where they can be restored to unwatched.
 - Duration, resolution, file type, and file size chips appear as metadata becomes available for visible media.
 

@@ -64,7 +64,8 @@ if (typeof iina !== "undefined" && iina.onMessage) {
       selectedPaths = new Set(Array.from(selectedPaths).filter((path) => availablePaths.has(path)));
       if (selectionAnchorPath && !availablePaths.has(selectionAnchorPath)) selectionAnchorPath = null;
     }
-    if (state.preferences) currentPreferences = state.preferences;
+    if (state.preferences) currentPreferences = { ...currentPreferences, ...state.preferences };
+    updateHelpShortcuts();
     if (state.isIndexing) {
       spinnerContainer.classList.remove("hidden");
       searchBar.classList.add("hidden");
@@ -88,6 +89,7 @@ const backBtn = document.getElementById("back-btn");
 const breadcrumb = document.getElementById("breadcrumb");
 const addFolderBtn = document.getElementById("add-folder-btn");
 const refreshBtn = document.getElementById("refresh-btn");
+const helpBtn = document.getElementById("help-btn");
 const searchInput = document.getElementById("search-input");
 const clearSearchBtn = document.getElementById("clear-search-btn");
 const filterDropdown = document.getElementById("filter-dropdown");
@@ -105,7 +107,12 @@ const deleteModal = document.getElementById("delete-modal");
 const deleteModalMessage = document.getElementById("delete-modal-message");
 const cancelDeleteBtn = document.getElementById("cancel-delete-btn");
 const confirmDeleteBtn = document.getElementById("confirm-delete-btn");
+const helpModal = document.getElementById("help-modal");
+const closeHelpBtn = document.getElementById("close-help-btn");
+const openWindowShortcut = document.getElementById("open-window-shortcut");
+const addFolderShortcut = document.getElementById("add-folder-shortcut");
 const toast = document.getElementById("toast");
+const pane = document.querySelector(".pane");
 
 setTimeout(() => {
   if (!messageReceived) {
@@ -128,12 +135,15 @@ let selectedPaths = new Set();
 let selectionAnchorPath = null;
 let actionPending = false;
 let toastTimer = null;
+let helpReturnFocus = null;
 const MAX_RENDERED_SEARCH_RESULTS = 500;
 let currentPreferences = {
   filterImages: true,
   filterAudio: true,
   videoOnly: false,
   hideWatched: false,
+  openWindowShortcut: "cmd+shift+a",
+  addFolderShortcut: "n",
 };
 
 let currentState = {
@@ -534,6 +544,43 @@ function showDeleteConfirmation() {
 
 function hideDeleteConfirmation() {
   if (deleteModal) deleteModal.classList.add("hidden");
+}
+
+function updateHelpShortcuts() {
+  if (openWindowShortcut) {
+    openWindowShortcut.textContent = QuickFoldersKeyboard.formatShortcut(
+      currentPreferences.openWindowShortcut,
+      "Not set"
+    );
+  }
+  if (addFolderShortcut) {
+    addFolderShortcut.textContent = QuickFoldersKeyboard.formatShortcut(
+      currentPreferences.addFolderShortcut,
+      "Not set"
+    );
+  }
+}
+
+function showKeyboardHelp() {
+  if (!helpModal || !helpModal.classList.contains("hidden")) return;
+  helpReturnFocus = document.activeElement;
+  updateHelpShortcuts();
+  helpModal.classList.remove("hidden");
+  if (pane) pane.setAttribute("inert", "");
+  if (helpBtn) helpBtn.setAttribute("aria-expanded", "true");
+  if (closeHelpBtn) closeHelpBtn.focus();
+}
+
+function hideKeyboardHelp() {
+  if (!helpModal || helpModal.classList.contains("hidden")) return;
+  helpModal.classList.add("hidden");
+  if (pane) pane.removeAttribute("inert");
+  if (helpBtn) helpBtn.setAttribute("aria-expanded", "false");
+  const returnTarget = helpReturnFocus;
+  helpReturnFocus = null;
+  if (returnTarget && document.contains(returnTarget) && typeof returnTarget.focus === "function") {
+    returnTarget.focus();
+  }
 }
 
 function showToast(message, isError = false) {
@@ -960,6 +1007,14 @@ if (refreshBtn) {
   });
 }
 
+if (helpBtn) helpBtn.addEventListener("click", showKeyboardHelp);
+if (closeHelpBtn) closeHelpBtn.addEventListener("click", hideKeyboardHelp);
+if (helpModal) {
+  helpModal.addEventListener("click", (event) => {
+    if (event.target === helpModal) hideKeyboardHelp();
+  });
+}
+
 // Search input handler
 if (searchInput) {
   searchInput.addEventListener("input", (e) => {
@@ -1020,11 +1075,40 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
+  if (helpModal && !helpModal.classList.contains("hidden")) {
+    if (event.key === "Escape" || event.key === "?") {
+      event.preventDefault();
+      hideKeyboardHelp();
+    } else if (event.key === "Tab") {
+      event.preventDefault();
+      closeHelpBtn.focus();
+    }
+    return;
+  }
+
   const target = event.target;
   const isTyping = target && (
     target.tagName === "INPUT" || target.tagName === "SELECT" || target.tagName === "TEXTAREA"
   );
   if (isTyping) return;
+
+  if (event.key === "?" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    event.preventDefault();
+    showKeyboardHelp();
+    return;
+  }
+
+  const isSearchShortcut = (
+    event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey
+  ) || (
+    event.key.toLowerCase() === "f" && (event.metaKey || event.ctrlKey)
+  );
+  if (isSearchShortcut && searchInput && !searchBar.classList.contains("hidden")) {
+    event.preventDefault();
+    searchInput.focus();
+    searchInput.select();
+    return;
+  }
 
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
     event.preventDefault();

@@ -720,6 +720,8 @@ function updateWindow() {
       videoOnly: videoOnly,
       hideWatched: hideWatched,
       maxIndexDepth: preferences.get("maxIndexDepth") ?? DEFAULT_MAX_INDEX_DEPTH,
+      openWindowShortcut: preferences.get("openWindowShortcut") ?? "cmd+shift+a",
+      addFolderShortcut: preferences.get("addFolderShortcut") ?? "n",
     },
   });
 }
