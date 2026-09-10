@@ -33,6 +33,8 @@ const QuickFoldersMediaPreview = (() => {
 
     function showThumbnail(element, dataUrl) {
       if (!element || !dataUrl) return;
+      const previousImage = element.querySelector(".thumbnail-image");
+      if (previousImage) previousImage.remove();
       const image = document.createElement("img");
       image.className = "thumbnail-image";
       image.alt = "";
@@ -61,8 +63,10 @@ const QuickFoldersMediaPreview = (() => {
     }
 
     function requestMedia(path) {
-      requestThumbnail(path);
+      // Metadata is inexpensive and makes rows useful while native thumbnail
+      // extraction continues in the background.
       requestMetadata(path);
+      requestThumbnail(path);
     }
 
     function handleIntersections(entries) {

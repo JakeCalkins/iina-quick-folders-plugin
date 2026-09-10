@@ -143,6 +143,11 @@ const mediaMetadataLoader = createAsyncResourceLoader({
 const queuePlayback = QueuePlayback.create({ core, file, playlist, utils });
 
 function requestThumbnail(path) {
+  if (!isValidMediaPath(path)) return;
+  // Native Quick Look and ffmpeg work can take several seconds on a cold
+  // launch. Give WebKit a useful preview immediately, then replace it with
+  // the generated frame or artwork when the bounded worker finishes.
+  postThumbnail(path, ThumbnailService.createFallbackThumbnailDataUrl(getFileTypeByExt(path)));
   thumbnailLoader.request(path);
 }
 

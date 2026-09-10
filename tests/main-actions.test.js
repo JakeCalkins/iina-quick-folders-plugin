@@ -218,6 +218,11 @@ test("main entry persists watched state and permanently deletes only validated f
     handlers.get("open-item")({ path: "/media/b.mkv", isDir: false });
     assert.deepEqual(openedPaths, [`/tmp/${queuePlaylistPath.slice("@tmp/".length)}`, "/media/b.mkv"]);
 
+    handlers.get("request-thumbnail")({ path: "/media/b.mkv" });
+    const immediateThumbnail = messages.filter((message) => message.type === "thumbnail-ready").at(-1);
+    assert.equal(immediateThumbnail.data.path, "/media/b.mkv");
+    assert.match(immediateThumbnail.data.dataUrl, /^data:image\/svg\+xml;base64,/);
+
     handlers.get("request-media-metadata")({ path: "/media/b.mkv" });
     await new Promise((resolve) => realSetTimeout(resolve, 0));
     const metadataResult = messages.filter((message) => message.type === "media-metadata-ready").at(-1);

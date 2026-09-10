@@ -1504,7 +1504,7 @@ body {
 .remove-btn:hover {
   background: var(--remove-hover-bg);
   color: var(--remove-hover-color);
-  width: 82px;
+  width: 92px;
   grid-template-columns: 14px 1fr;
   gap: 6px;
   padding: 0 10px;
@@ -1687,22 +1687,25 @@ body {
 .queue-text-btn,
 .queue-close-btn,
 .queue-remove-btn {
-  border: 0;
+  border: 1px solid var(--button-border);
   color: var(--muted);
-  background: transparent;
+  background: var(--chip-bg);
   cursor: pointer;
   font: 650 11px -apple-system, "SF Pro Text", sans-serif;
   transition: color 140ms ease, background-color 140ms ease, transform 140ms ease;
 }
 
 .queue-text-btn {
-  padding: 5px 7px;
-  border-radius: 6px;
+  min-height: 27px;
+  padding: 5px 9px;
+  border-radius: 8px;
 }
 
 .queue-text-btn:hover:not(:disabled) {
   color: var(--accent);
+  border-color: var(--accent);
   background: var(--accent-hover-bg);
+  transform: translateY(-1px);
 }
 
 .queue-text-btn:disabled {
@@ -1718,6 +1721,12 @@ body {
   border-radius: 50%;
   font-size: 19px;
   line-height: 1;
+}
+
+.queue-remove-btn,
+#queue-remove-selected-btn {
+  color: var(--remove-hover-color);
+  background: var(--remove-hover-bg);
 }
 
 .queue-close-btn:hover,

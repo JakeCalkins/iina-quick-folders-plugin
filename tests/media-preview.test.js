@@ -112,8 +112,8 @@ test("lazy preview requests render a thumbnail and type-specific metadata chips"
     preview.attachMetadata(info, "/media/example.mkv");
 
     assert.deepEqual(messages, [
-      { type: "request-thumbnail", data: { path: "/media/example.mkv" } },
       { type: "request-media-metadata", data: { path: "/media/example.mkv" } },
+      { type: "request-thumbnail", data: { path: "/media/example.mkv" } },
     ]);
 
     preview.handleThumbnailReady({
@@ -133,6 +133,13 @@ test("lazy preview requests render a thumbnail and type-specific metadata chips"
 
     assert.equal(thumbnail.classList.contains("has-thumbnail"), true);
     assert.equal(thumbnail.children[0].src, "data:image/png;base64,iVBORw==");
+    const firstThumbnail = thumbnail.children[0];
+    preview.handleThumbnailReady({
+      path: "/media/example.mkv",
+      dataUrl: "data:image/png;base64,cmVhbA==",
+    });
+    assert.equal(firstThumbnail.removed, true, "a generated preview should replace the immediate fallback");
+    assert.equal(thumbnail.children.at(-1).src, "data:image/png;base64,cmVhbA==");
     assert.deepEqual(info.children.map((child) => child.textContent), [
       "2:05",
       "1920×1080",
@@ -178,8 +185,8 @@ test("visibility sampling resumes lazy requests when WebKit does not wake its ob
     preview.requestVisible();
 
     assert.deepEqual(messages, [
-      { type: "request-thumbnail", data: { path: "/media/visible.mkv" } },
       { type: "request-media-metadata", data: { path: "/media/visible.mkv" } },
+      { type: "request-thumbnail", data: { path: "/media/visible.mkv" } },
     ]);
     assert.equal(observed.has(visible), false);
     assert.equal(observed.has(offscreen), true);
@@ -188,8 +195,8 @@ test("visibility sampling resumes lazy requests when WebKit does not wake its ob
     preview.loadThumbnail(visible, "/media/visible.mkv", false);
     preview.requestVisible();
     assert.deepEqual(messages.slice(2), [
-      { type: "request-thumbnail", data: { path: "/media/visible.mkv" } },
       { type: "request-media-metadata", data: { path: "/media/visible.mkv" } },
+      { type: "request-thumbnail", data: { path: "/media/visible.mkv" } },
     ]);
   } finally {
     delete global.IntersectionObserver;
