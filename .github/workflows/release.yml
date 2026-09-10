@@ -32,8 +32,14 @@ jobs:
       - name: Validate tag, manifest, and changelog versions
         id: version
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          tag_version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must use vMAJOR.MINOR.PATCH: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          tag_version="${RELEASE_TAG#v}"
           manifest_version="$(node -p "require('./Info.json').version")"
           if [[ "$tag_version" != "$manifest_version" ]]; then
             echo "Tag v$tag_version does not match Info.json version $manifest_version" >&2
@@ -57,13 +63,20 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash scripts/publish-release.sh
+      - name: Verify published package download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            "dist/quick-folders-v${VERSION}.iinaplgz#Quick Folders ${VERSION}" \
-            "dist/quick-folders-v${VERSION}.iinaplgz.sha256#SHA-256 checksum" \
-            --verify-tag \
-            --fail-on-no-commits \
-            --title "Quick Folders v${VERSION}" \
-            --notes $'## Installation\n\nDownload the `.iinaplgz` file below and open it with IINA. You can also install from the GitHub repository URL to receive updates.\n' \
-            --generate-notes
+          verification_dir="$RUNNER_TEMP/quick-folders-release-$VERSION"
+          mkdir -p "$verification_dir"
+          gh release download "$RELEASE_TAG" \
+            --pattern "quick-folders-v${VERSION}.iinaplgz" \
+            --pattern "quick-folders-v${VERSION}.iinaplgz.sha256" \
+            --dir "$verification_dir"
+          (cd "$verification_dir" && sha256sum -c "quick-folders-v${VERSION}.iinaplgz.sha256")
+          node scripts/verify-plugin-package.mjs "$verification_dir/quick-folders-v${VERSION}.iinaplgz"
