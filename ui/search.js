@@ -255,6 +255,6 @@ const QuickFoldersSearch = (() => {
   return { compileQuery, createRecord, match };
 })();
 
-if (typeof module !== "undefined" && module.exports) {
+if (typeof module !== "undefined") {
   module.exports = QuickFoldersSearch;
 }

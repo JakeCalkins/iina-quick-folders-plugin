@@ -36,6 +36,6 @@ const QuickFoldersMediaMetadata = (() => {
   return { formatDuration, formatResolution, parseMdlsOutput };
 })();
 
-if (typeof module !== "undefined" && module.exports) {
+if (typeof module !== "undefined") {
   module.exports = QuickFoldersMediaMetadata;
 }

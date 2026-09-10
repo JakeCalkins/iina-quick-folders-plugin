@@ -1,5 +1,5 @@
 const QuickFoldersView = (() => {
-  const FileTypes = typeof module !== "undefined" && module.exports
+  const FileTypes = typeof module !== "undefined"
     ? require("../file-types.js")
     : QuickFoldersFileTypes;
 
@@ -87,6 +87,6 @@ const QuickFoldersView = (() => {
   };
 })();
 
-if (typeof module !== "undefined" && module.exports) {
+if (typeof module !== "undefined") {
   module.exports = QuickFoldersView;
 }

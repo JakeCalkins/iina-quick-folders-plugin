@@ -22,6 +22,7 @@ test("main entry persists watched state and permanently deletes only validated f
   const messages = [];
   const deletedPaths = [];
   const openedPaths = [];
+  const menuItems = new Map();
   let mediaListCalls = 0;
 
   const fileApi = {
@@ -73,11 +74,14 @@ test("main entry persists watched state and permanently deletes only validated f
     },
     preferences: { get(key) { return key === "hideWatched" ? true : undefined; } },
     menu: {
-      item(title, callback) {
+      item(title, callback, options = {}) {
         menuCallbacks.set(title, callback);
-        return { title, callback };
+        const item = { title, callback, ...options };
+        menuItems.set(title, item);
+        return item;
       },
       addItem() {},
+      forceUpdate() {},
     },
     standaloneWindow: {
       setProperty() {},
@@ -90,10 +94,14 @@ test("main entry persists watched state and permanently deletes only validated f
   };
 
   const realSetTimeout = global.setTimeout;
+  const realSetInterval = global.setInterval;
   global.setTimeout = () => 0;
+  global.setInterval = () => 0;
   try {
     delete require.cache[require.resolve("../main.js")];
     require("../main.js");
+    assert.equal(menuItems.get("Open Quick Folders Window").keyBinding, "Meta+K");
+    assert.equal(menuItems.get("Add Folder").keyBinding, "n");
     menuCallbacks.get("Open Quick Folders Window")();
 
     const initialUpdate = messages.filter((message) => message.type === "update-items").at(-1).data;
@@ -160,6 +168,7 @@ test("main entry persists watched state and permanently deletes only validated f
     ]);
   } finally {
     global.setTimeout = realSetTimeout;
+    global.setInterval = realSetInterval;
     delete global.iina;
   }
 });

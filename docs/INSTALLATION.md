@@ -11,7 +11,7 @@ This is the recommended method because IINA can associate the plugin with its so
 3. Enter `JakeCalkins/iina-quick-folders-plugin` or the full repository URL.
 4. Confirm the installation, then restart IINA if requested.
 
-Press `⌘ ⇧ A` while IINA is active to open Quick Folders. Press `N` to add your first folder.
+Press `⌘ ⇧ K` while IINA is active to open Quick Folders. Press `N` to add your first folder.
 
 ## Install a release package
 
