@@ -1,6 +1,5 @@
 /* Dark mode colors (default) */
 :root {
-  color-scheme: dark;
   --bg: transparent;
   --text: #e5e5e5;
   --muted: #9ea0a6;
@@ -56,7 +55,6 @@
 /* Light mode colors */
 @media (prefers-color-scheme: light) {
   :root {
-    color-scheme: light;
     --bg: transparent;
     --text: #1d1d1f;
     --muted: #6e6e73;
@@ -522,7 +520,7 @@ body {
 .progress-bar-wrapper {
   width: 100%;
   height: 4px;
-  background: var(--chip-bg);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 2px;
   overflow: hidden;
   position: relative;
@@ -753,6 +751,20 @@ body {
   letter-spacing: 0.5px;
 }
 
+@media (prefers-color-scheme: light) {
+  .ext-tag {
+    background: rgba(0, 0, 0, 0.08);
+    color: #1d1d1f;
+  }
+
+  .ext-tag[class*="video-"],
+  .ext-tag[class*="audio-"],
+  .ext-tag[class*="image-"],
+  .ext-tag.other {
+    color: rgba(0, 0, 0, 0.7);
+  }
+}
+
 /* Color-coded extension tags and thumbnails by type */
 /* Video files: cool green/blue spectrum */
 .ext-tag.video-mp4, .thumb.video-mp4 { background: rgba(52, 199, 89, 0.35); color: #5fdb7e; }
@@ -793,23 +805,6 @@ body {
 
 /* Other/unknown files: dark grey */
 .ext-tag.other, .thumb.other { background: rgba(90, 90, 95, 0.35); color: #9a9a9f; }
-
-@media (prefers-color-scheme: light) {
-  .ext-tag {
-    color: #1d1d1f;
-  }
-
-  .ext-tag[class*="video-"],
-  .ext-tag[class*="audio-"],
-  .ext-tag[class*="image-"],
-  .ext-tag.other,
-  .thumb[class*="video-"],
-  .thumb[class*="audio-"],
-  .thumb[class*="image-"],
-  .thumb.other {
-    color: rgba(0, 0, 0, 0.7);
-  }
-}
 
 .metadata {
   font-size: 11px;
@@ -974,7 +969,6 @@ body {
 
 @media (prefers-color-scheme: light) {
   :root {
-    color-scheme: light;
     --text: #1d1d1f;
     --muted: #6e6e73;
     --divider: rgba(0, 0, 0, 0.1);
