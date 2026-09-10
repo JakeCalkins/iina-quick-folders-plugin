@@ -1,7 +1,7 @@
 {
   "name": "Quick Folders",
   "identifier": "com.jakecalkins.quickfolders",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Adds a Quick Folders window to browse and open local folders quickly. Navigate your media library with customizable filters, keyboard shortcuts, and deep folder indexing.",
   "author": {
     "name": "JakeCalkins",

@@ -1,98 +1,69 @@
-name: Build and Release
+name: Release
 
 on:
   push:
     tags:
-      - 'v*'
-  workflow_dispatch:
+      - "v*.*.*"
 
 permissions:
-  contents: write
-  packages: read
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build-and-release:
-    runs-on: macos-latest
-    
+  release:
+    name: Validate and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Get version from tag
-        id: get_version
+      - name: Check out tagged source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+      - name: Validate tag, manifest, and changelog versions
+        id: version
+        shell: bash
         run: |
-          # Extract version from tag or Info.json
-          if [[ $GITHUB_REF =~ ^refs/tags/v(.+)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-          else
-            VERSION=$(jq -r '.version' quick-folders.iinaplugin/Info.json)
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
-          echo "Using version: $VERSION"
-      
-      - name: Download IINA
-        run: |
-          # Use IINA v1.4.1 (latest stable with iina-plugin CLI)
-          DOWNLOAD_URL="https://github.com/iina/iina/releases/download/v1.4.1/IINA.v1.4.1.dmg"
-          
-          echo "Downloading IINA from: $DOWNLOAD_URL"
-          curl -L -I "$DOWNLOAD_URL" 2>&1 | head -20
-          curl -L -o IINA.dmg "$DOWNLOAD_URL" || { echo "Download failed"; exit 1; }
-          ls -lh IINA.dmg
-          
-          # Verify the file is a valid DMG
-          file IINA.dmg
-          
-          echo "Attaching DMG..."
-          hdiutil attach IINA.dmg -nobrowse -quiet || { echo "Failed to attach DMG"; exit 1; }
-          
-          echo "Listing mounted volumes..."
-          ls -la /Volumes/ | grep -i iina
-          
-          echo "Copying IINA.app to /Applications..."
-          cp -R /Volumes/IINA/IINA.app /Applications/ 2>/dev/null || cp -R /Volumes/IINA.app /Applications/ 2>/dev/null || { echo "Failed to copy IINA.app"; exit 1; }
-          
-          echo "Detaching DMG..."
-          hdiutil detach /Volumes/IINA -quiet 2>/dev/null || hdiutil detach /Volumes/IINA.app -quiet 2>/dev/null || true
-      
-      - name: Setup iina-plugin CLI
-        run: |
-          echo "Checking for iina-plugin CLI..."
-          if [ -f "/Applications/IINA.app/Contents/MacOS/iina-plugin" ]; then
-            echo "✓ iina-plugin found"
-            sudo ln -sf /Applications/IINA.app/Contents/MacOS/iina-plugin /usr/local/bin/iina-plugin
-            which iina-plugin
-            iina-plugin --version || echo "Version check failed but CLI exists"
-          else
-            echo "✗ iina-plugin not found"
-            echo "Contents of /Applications/IINA.app/Contents/MacOS/:"
-            ls -la /Applications/IINA.app/Contents/MacOS/ || echo "Directory not found"
+          tag_version="${GITHUB_REF_NAME#v}"
+          manifest_version="$(node -p "require('./quick-folders.iinaplugin/Info.json').version")"
+          if [[ "$tag_version" != "$manifest_version" ]]; then
+            echo "Tag v$tag_version does not match Info.json version $manifest_version" >&2
             exit 1
           fi
-      
-      - name: Build plugin package
+          if ! grep -Fq "## [$manifest_version] -" CHANGELOG.md; then
+            echo "CHANGELOG.md has no dated section for $manifest_version" >&2
+            exit 1
+          fi
+          echo "version=$manifest_version" >> "$GITHUB_OUTPUT"
+      - name: Validate and test
         run: |
-          iina-plugin pack quick-folders.iinaplugin
-          ls -la quick-folders.iinaplugin*.iinaplgz
-          mv quick-folders.iinaplugin*.iinaplgz quick-folders-v${{ steps.get_version.outputs.VERSION }}.iinaplgz
-      
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+          npm run check
+          npm test
+      - name: Build release package and checksum
+        run: npm run package
+      - name: Attest package provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
-          files: quick-folders-v${{ steps.get_version.outputs.VERSION }}.iinaplgz
-          body: |
-            ## Quick Folders v${{ steps.get_version.outputs.VERSION }}
-            
-            ### Installation
-            1. Download the `.iinaplgz` file below
-            2. Double-click to install, or drag onto IINA
-            3. Restart IINA if prompted
-            
-            Users can also install this plugin directly in IINA from the GitHub repository: **JakeCalkins/iina-quick-folders-plugin**
-            
-            ### What's Changed
-            See [CHANGELOG.md](CHANGELOG.md) for details.
-          draft: false
-          prerelease: false
+          subject-path: dist/*.iinaplgz
+      - name: Publish GitHub release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/quick-folders-v${VERSION}.iinaplgz#Quick Folders ${VERSION}" \
+            "dist/quick-folders-v${VERSION}.iinaplgz.sha256#SHA-256 checksum" \
+            --verify-tag \
+            --fail-on-no-commits \
+            --title "Quick Folders v${VERSION}" \
+            --notes $'## Installation\n\nDownload the `.iinaplgz` file below and open it with IINA. You can also install from the GitHub repository URL to receive updates.\n' \
+            --generate-notes

@@ -33,4 +33,4 @@ Scripts in `ui/index.html` are ordered by dependency. Keep shared/pure modules b
 
 ## Verification
 
-Run `node --test tests/*.test.js` plus syntax checks for every JavaScript entry point. UI changes should also be exercised in a 500×600 browser viewport, including search/filter composition, selection actions, modal focus behavior, watched views, and media metadata updates. Finally, build with `iina-plugin pack quick-folders.iinaplugin` and validate the archive with `unzip -t`.
+Run `npm run verify` to check JavaScript syntax, manifest integrity, browser script references, documentation links, unit tests, and the installable archive. UI changes should also be exercised in a 500×600 browser viewport, including search/filter composition, selection actions, modal focus behavior, watched views, and media metadata updates. See [CONTRIBUTING.md](CONTRIBUTING.md) for the manual regression checklist.

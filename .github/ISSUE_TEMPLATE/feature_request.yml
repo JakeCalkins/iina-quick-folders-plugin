@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest a focused improvement to Quick Folders.
+title: "[Feature]: "
+labels: [enhancement, triage]
+body:
+  - type: checkboxes
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find this request.
+          required: true
+  - type: textarea
+    attributes:
+      label: Problem or use case
+      description: What is difficult today, and who would benefit?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful version of the feature.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Alternatives considered
+      description: Note existing workarounds or different approaches you considered.
+  - type: textarea
+    attributes:
+      label: Additional context
+      description: Add mockups, examples, or related links.
