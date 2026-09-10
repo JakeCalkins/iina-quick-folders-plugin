@@ -8,9 +8,9 @@ These scripts provide the dependency-free local and CI workflow. Keep them porta
 - Do not assume a contributor username, home path, Homebrew prefix, shell profile, or globally linked IINA CLI.
 - Check required commands and return concise actionable errors.
 - Destructive cleanup may target only an exact generated file inside `dist/`; never delete broad or unresolved paths.
-- Keep packaging offline and reproducible in file selection/order. The archive contains only runtime files from `quick-folders.iinaplugin/`; exclude contributor-only `AGENTS.md` and `CLAUDE.md` files.
+- Keep packaging offline and reproducible in file selection/order. Source installation uses the repository root, while archives contain only root runtime files and `ui/`; exclude contributor-only files.
 - Generate and verify the SHA-256 checksum alongside the package.
-- Release preparation validates every precondition before writing either `Info.json` or `CHANGELOG.md`; reject invalid, duplicate, or non-increasing versions.
+- Release preparation validates every precondition before writing either `Info.json` or `CHANGELOG.md`; reject invalid, duplicate, or non-increasing versions and increment `ghVersion` once per published version.
 - Use `RELEASE_DATE=YYYY-MM-DD` only when a maintainer needs an explicit release date.
 
 ## Validation

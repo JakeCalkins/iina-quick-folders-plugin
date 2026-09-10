@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const search = require("../quick-folders.iinaplugin/ui/search.js");
+const search = require("../ui/search.js");
 
 function matches(name, query, isDir = false) {
   const record = search.createRecord({ name, isDir });

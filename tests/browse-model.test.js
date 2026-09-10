@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const Search = require("../quick-folders.iinaplugin/ui/search.js");
-const BrowseModel = require("../quick-folders.iinaplugin/ui/browse-model.js");
+const Search = require("../ui/search.js");
+const BrowseModel = require("../ui/browse-model.js");
 
 test("combines matching root folders with ranked indexed file results", () => {
   const model = BrowseModel.create({ maxSearchResults: 1 });

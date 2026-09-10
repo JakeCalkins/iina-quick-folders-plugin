@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const view = require("../quick-folders.iinaplugin/ui/view-helpers.js");
+const view = require("../ui/view-helpers.js");
 
 test("formats file names, sizes, and paths for display", () => {
   assert.equal(view.getDisplayName({ name: "Movie.Final.mp4", isDir: false }), "Movie.Final");

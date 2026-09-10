@@ -16,7 +16,7 @@ Quick Folders requires IINA 1.4.0 or later.
 
 1. Open **IINA → Settings → Plugins**.
 2. Choose **Install from GitHub**.
-3. Paste `https://github.com/JakeCalkins/iina-quick-folders-plugin` and confirm.
+3. Paste `JakeCalkins/iina-quick-folders-plugin` (or the full repository URL) and confirm.
 
 Installing from the repository lets IINA discover future plugin updates.
 

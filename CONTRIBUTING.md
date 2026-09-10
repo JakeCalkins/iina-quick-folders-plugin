@@ -52,12 +52,12 @@ CI runs the checks on Node 20 and Node 24 for every pull request and push to `ma
 ## Code organization
 
 ```text
-quick-folders.iinaplugin/
-├── main.js                    # IINA integration and backend orchestration
-├── file-types.js              # Shared media classification
-├── async-resource-loader.js   # Bounded backend worker queues
-├── browse-state.js            # Pure shared browse/selection state
-└── ui/                        # Standalone-window modules and styles
+Info.json                    # Root manifest required by GitHub installation
+main.js                     # IINA integration and backend orchestration
+file-types.js               # Shared media classification
+async-resource-loader.js    # Bounded backend worker queues
+browse-state.js             # Pure shared browse/selection state
+ui/                         # Standalone-window modules and styles
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for runtime boundaries, module responsibilities, and invariants.

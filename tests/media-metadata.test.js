@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const metadata = require("../quick-folders.iinaplugin/media-metadata.js");
+const metadata = require("../media-metadata.js");
 
 test("parses available Spotlight media metadata and ignores null values", () => {
   assert.deepEqual(metadata.parseMdlsOutput([

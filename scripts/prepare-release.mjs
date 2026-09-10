@@ -9,8 +9,12 @@ if (!/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(version || "")) {
   process.exit(1);
 }
 
-const manifestPath = join(repositoryRoot, "quick-folders.iinaplugin", "Info.json");
+const manifestPath = join(repositoryRoot, "Info.json");
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+if (!Number.isInteger(manifest.ghVersion) || manifest.ghVersion < 1) {
+  console.error("Info.json ghVersion must be a positive integer before preparing a release");
+  process.exit(1);
+}
 const currentParts = String(manifest.version || "").split(".").map(Number);
 const nextParts = version.split(".").map(Number);
 const isNewer = nextParts.some((part, index) => part > currentParts[index] && nextParts.slice(0, index).every((value, prior) => value === currentParts[prior]));
@@ -51,6 +55,7 @@ const updatedChangelog = changelog.replace(
 // Write only after every precondition passes so a failed preparation cannot
 // leave the manifest and changelog at different versions.
 manifest.version = version;
+manifest.ghVersion += 1;
 writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 writeFileSync(changelogPath, updatedChangelog);
 

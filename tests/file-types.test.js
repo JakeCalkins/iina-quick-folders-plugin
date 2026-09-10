@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fileTypes = require("../quick-folders.iinaplugin/file-types.js");
+const fileTypes = require("../file-types.js");
 
 test("normalizes filenames and extensions consistently", () => {
   assert.equal(fileTypes.getExtension("/Media/Movie.Final.MP4"), "mp4");

@@ -1,6 +1,6 @@
 # Quick Folders repository guide
 
-This repository contains an IINA plugin with two JavaScript runtimes: the IINA backend and a standalone-window browser UI. Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing runtime boundaries or data flow.
+This repository is also the installable IINA plugin root and contains two JavaScript runtimes: the IINA backend and a standalone-window browser UI. Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing runtime boundaries or data flow.
 
 ## Start here
 
@@ -8,6 +8,7 @@ This repository contains an IINA plugin with two JavaScript runtimes: the IINA b
 - Use the nearest `AGENTS.md`; nested guidance supplements this file for that directory.
 - Keep the plugin dependency-free unless a dependency solves a demonstrated problem that cannot be handled clearly with platform APIs.
 - Prefer small, testable modules over adding more orchestration to `main.js` or `ui/app.js`.
+- Keep `Info.json`, its `entry`, and its referenced pages at repository-root-relative paths. IINA's GitHub installer downloads the repository itself as the plugin.
 
 ## Commands
 
@@ -19,9 +20,11 @@ This repository contains an IINA plugin with two JavaScript runtimes: the IINA b
 
 ## Architecture and style
 
-- `quick-folders.iinaplugin/main.js` owns IINA APIs, persistence, indexing, navigation, and backend messages.
+- `main.js` owns IINA APIs, persistence, indexing, navigation, and backend messages. It runs inside IINA, not Node or a general browser.
 - Shared pure behavior belongs in modules such as `file-types.js`, `browse-state.js`, or a new focused module with Node coverage.
-- `quick-folders.iinaplugin/ui/app.js` coordinates state and commands; DOM factories, dialogs, search, and async previews live in separate UI modules.
+- `ui/app.js` coordinates state and commands; DOM factories, dialogs, search, and async previews live in separate UI modules.
+- Backend modules use CommonJS. Do not introduce Node-only filesystem, process, or network APIs into shipped code.
+- The browser UI has a separate JavaScript context and communicates only through the backend message names and `ui/messaging.js`.
 - Use `const` by default, descriptive camelCase names, guard clauses, and focused functions.
 - Comments should explain intent, invariants, platform constraints, or tradeoffs—not restate the code.
 - Keep user-facing copy concise and use consistent Quick Folders, IINA, file-type, and watched/unwatched terminology.
@@ -34,6 +37,18 @@ This repository contains an IINA plugin with two JavaScript runtimes: the IINA b
 - Use obviously fictional, portable fixture paths such as `/media/example.mp4`; do not copy paths from a contributor's machine into code or docs.
 - Do not add telemetry or network calls. If network access is ever required, document the purpose and narrow `allowedDomains` in `Info.json`.
 - Generated `.iinaplgz`, checksum, `dist/`, plugin state, and debug output must remain untracked.
+
+## Backend state and IINA compatibility
+
+- Normalize and validate all UI-supplied paths before opening, reading metadata, marking watched, or deleting.
+- A configured root matches itself or descendants on a path-segment boundary; reject traversal and lookalike prefixes.
+- Verify a target is a real playable file immediately before any mutation.
+- Keep persisted state backward-compatible or add an explicit migration and tests.
+- Build indexes into local state and publish atomically. Bound caches, queues, scans, and bulk operations.
+- Account for IINA file entries exposing either `filename`/`name` and `isDir`/`is_dir`.
+- Treat file size, thumbnails, Spotlight metadata, and directory access as optional; failures should degrade gracefully.
+- Message handlers must be registered once even if the standalone window is reopened.
+- Keep menu shortcut defaults consistent with `Info.json`, preferences UI, README, help UI, and tests.
 
 ## Testing expectations
 

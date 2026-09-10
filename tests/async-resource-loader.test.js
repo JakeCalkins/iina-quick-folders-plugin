@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createAsyncResourceLoader } = require("../quick-folders.iinaplugin/async-resource-loader.js");
+const { createAsyncResourceLoader } = require("../async-resource-loader.js");
 
 test("deduplicates pending loads and serves later requests from cache", async () => {
   let loadCount = 0;

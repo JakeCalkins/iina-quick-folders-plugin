@@ -21,4 +21,4 @@ else
 fi
 
 cd -- "$repository_root"
-exec "$cli" "$action" quick-folders.iinaplugin
+exec "$cli" "$action" .
