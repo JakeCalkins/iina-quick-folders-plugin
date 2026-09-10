@@ -19,6 +19,7 @@ _No unreleased changes yet._
 ### Changed
 - Made a plain file click play immediately, while modifier-click, the selection control, and Space provide predictable multi-selection
 - Bounded thumbnail work with type-aware Quick Look, image resizing, safe temporary cleanup, deduplication, and in-memory caching
+- Restyled metadata chips as quiet, borderless labels with adaptive light and dark appearance
 
 ### Fixed
 - Restored back-button, root-bounded breadcrumb, file-filter, and local browser-message interactions that could be lost during WebKit rerenders
