@@ -27,6 +27,7 @@ _No unreleased changes yet._
 - Fixed thumbnail reads that incorrectly treated IINA's directory-relative result paths as filesystem-root paths
 - Avoided unbounded Quick Look work for unsupported containers such as MKV
 - Prevented lazy thumbnails and metadata chips from disappearing when IINA suspends animations or replaces the standalone WebView
+- Kept row hover treatments and the expanding root-folder Remove button inside the scroll viewport
 
 ## [2.3.5] - 2026-09-10
 

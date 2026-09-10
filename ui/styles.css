@@ -1117,11 +1117,10 @@ body {
 
 .row:hover {
   background: var(--row-accent-hover);
-  transform: translateX(2px);
 }
 
 .row:active {
-  transform: translateX(1px) scale(0.992);
+  transform: scale(0.992);
 }
 
 .row:focus-visible {
@@ -1393,6 +1392,8 @@ body {
   white-space: nowrap;
   overflow: hidden;
   padding: 0 8px;
+  justify-self: end;
+  transform-origin: right center;
 }
 
 @media (prefers-color-scheme: light) {
