@@ -76,18 +76,18 @@ Enhancement suggestions are tracked as GitHub issues. When creating an enhanceme
 
 ```
 quick-folders.iinaplugin/
-├── main.js           # Main plugin entry point
-├── constants.js      # Configuration constants
-├── preferences.html  # Settings UI
-└── ui/              # Quick Folders window
-    ├── index.html
-    ├── app.js
-    ├── messaging.js
-    └── styles.css
+├── main.js                    # IINA integration and backend orchestration
+├── file-types.js              # Shared media classification
+├── async-resource-loader.js   # Bounded backend worker queues
+├── browse-state.js            # Pure shared browse/selection state
+└── ui/                        # Standalone-window modules and styles
 ```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for module responsibilities, runtime boundaries, and invariants.
 
 ### Testing
 
+- Run the automated suite with `node --test tests/*.test.js`
 - Test with various folder structures and depths
 - Verify all filter options work correctly
 - Test keyboard shortcuts don't conflict

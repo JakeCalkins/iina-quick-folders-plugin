@@ -215,6 +215,10 @@
   flex: 0 0 auto;
 }
 
+.path-metadata {
+  opacity: 0.7;
+}
+
 .confirm-modal {
   position: fixed;
   inset: 0;
@@ -719,6 +723,13 @@ body {
 .back-btn:active,
 .icon-btn:active {
   transform: translateY(0) scale(0.94);
+}
+
+.icon-btn:disabled {
+  cursor: wait;
+  opacity: 0.5;
+  pointer-events: none;
+  transform: none;
 }
 
 .button-icon {

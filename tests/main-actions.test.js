@@ -21,6 +21,8 @@ test("main entry persists watched state and permanently deletes only validated f
   const menuCallbacks = new Map();
   const messages = [];
   const deletedPaths = [];
+  const openedPaths = [];
+  let mediaListCalls = 0;
 
   const fileApi = {
     exists(path) {
@@ -34,7 +36,8 @@ test("main entry persists watched state and permanently deletes only validated f
     write(path, content) {
       if (path === statePath) persistedState = content;
     },
-    list(path) {
+    list(path, options) {
+      if (path === "/media" && options === undefined) mediaListCalls++;
       if (path !== "/media") return [];
       return [
         { filename: "a.mp4", path: "/media/a.mp4", isDir: false },
@@ -55,7 +58,7 @@ test("main entry persists watched state and permanently deletes only validated f
 
   global.iina = {
     console: { error() {}, log() {} },
-    core: { open() {} },
+    core: { open(path) { openedPaths.push(path); } },
     file: fileApi,
     utils: {
       fileInPath(path) { return path === "/usr/bin/mdls"; },
@@ -115,6 +118,21 @@ test("main entry persists watched state and permanently deletes only validated f
     handlers.get("go-back")();
     const returnedRoot = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.equal(returnedRoot.atRoot, true);
+
+    const listCallsBeforeRefresh = mediaListCalls;
+    global.setTimeout = realSetTimeout;
+    await Promise.all([
+      handlers.get("refresh-index")(),
+      handlers.get("refresh-index")(),
+    ]);
+    global.setTimeout = () => 0;
+    assert.equal(mediaListCalls - listCallsBeforeRefresh, 1, "concurrent refreshes should share one index scan");
+    const refreshedState = messages.filter((message) => message.type === "update-items").at(-1).data;
+    assert.deepEqual(refreshedState.availableExtensions, ["mkv", "mov", "mp4"]);
+
+    handlers.get("open-item")({ path: "/outside/movie.mp4", isDir: false });
+    handlers.get("open-item")({ path: "/media/b.mkv", isDir: false });
+    assert.deepEqual(openedPaths, ["/media/b.mkv"]);
 
     handlers.get("request-media-metadata")({ path: "/media/b.mkv" });
     await new Promise((resolve) => realSetTimeout(resolve, 0));

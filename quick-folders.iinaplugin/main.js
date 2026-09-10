@@ -1,6 +1,8 @@
 const { console, core, file, utils, menu, standaloneWindow, preferences } = iina;
 const BrowseState = require("./browse-state.js");
+const FileTypes = require("./file-types.js");
 const MediaMetadata = require("./media-metadata.js");
+const { createAsyncResourceLoader } = require("./async-resource-loader.js");
 
 
 const STATE_FILE = "@data/quick-folders-state.json";
@@ -13,20 +15,11 @@ const THUMBNAIL_TOOL = "/usr/bin/qlmanage";
 const METADATA_TOOL = "/usr/bin/mdls";
 const THUMBNAIL_CACHE_DIR = `@tmp/quick-folders-thumbnails/${Date.now()}`;
 
-// File type patterns (mirrored in constants.js for UI)
-const videoExtensions = /\.(mp4|mkv|avi|mov|flv|wmv|webm|m4v|3gp|ts|mts|m2ts|mxf)$/i;
-const audioExtensions = /\.(mp3|aac|flac|ogg|wav|wma|aiff|opus|m4a)$/i;
-const imageExtensions = /\.(jpg|jpeg|png|gif|bmp|webp|svg|tiff|ico)$/i;
+const { FILE_TYPES, SKIP_DIRECTORIES, getFileTypeByExt, isPlayableFile } = FileTypes;
+const MAX_DEBUG_LINES = 1000;
+const DEBUG_FLUSH_DELAY = 250;
 
-const thumbnailCache = new Map();
-const pendingThumbnails = new Set();
-const thumbnailQueue = [];
-let activeThumbnailJobs = 0;
 let thumbnailJobSequence = 0;
-const mediaMetadataCache = new Map();
-const pendingMediaMetadata = new Set();
-const mediaMetadataQueue = [];
-let activeMediaMetadataJobs = 0;
 const MAX_CONCURRENT_METADATA_JOBS = 3;
 const MAX_MEDIA_METADATA_IN_MEMORY = 500;
 
@@ -60,14 +53,6 @@ function hashPath(path) {
 
 function isPathInFolderRoots(path) {
   return BrowseState.isPathWithinRoots(path, folderRoots);
-}
-
-function rememberThumbnail(path, dataUrl) {
-  if (thumbnailCache.size >= MAX_THUMBNAILS_IN_MEMORY) {
-    const oldestPath = thumbnailCache.keys().next().value;
-    thumbnailCache.delete(oldestPath);
-  }
-  thumbnailCache.set(path, dataUrl);
 }
 
 function readThumbnailDataUrl(path) {
@@ -124,42 +109,10 @@ function postThumbnail(path, dataUrl) {
   }
 }
 
-function processThumbnailQueue() {
-  while (activeThumbnailJobs < MAX_CONCURRENT_THUMBNAILS && thumbnailQueue.length > 0) {
-    const path = thumbnailQueue.shift();
-    activeThumbnailJobs++;
-
-    generateThumbnail(path)
-      .then((dataUrl) => {
-        rememberThumbnail(path, dataUrl);
-        postThumbnail(path, dataUrl);
-      })
-      .catch(() => {
-        rememberThumbnail(path, null);
-        postThumbnail(path, null);
-      })
-      .then(() => {
-        pendingThumbnails.delete(path);
-        activeThumbnailJobs--;
-        processThumbnailQueue();
-      });
-  }
-}
-
-function requestThumbnail(path) {
-  if (typeof path !== "string" || !isPathInFolderRoots(path)) return;
+function isValidMediaPath(path) {
+  if (typeof path !== "string" || !isPathInFolderRoots(path)) return false;
   const filename = path.split("/").pop() || "";
-  if (!isPlayableFile(filename) || !file.exists(path)) return;
-
-  if (thumbnailCache.has(path)) {
-    postThumbnail(path, thumbnailCache.get(path));
-    return;
-  }
-  if (pendingThumbnails.has(path)) return;
-
-  pendingThumbnails.add(path);
-  thumbnailQueue.push(path);
-  processThumbnailQueue();
+  return isPlayableFile(filename) && file.exists(path);
 }
 
 async function readMediaMetadata(path) {
@@ -183,112 +136,60 @@ function postMediaMetadata(path, metadata) {
   }
 }
 
-function rememberMediaMetadata(path, metadata) {
-  if (mediaMetadataCache.size >= MAX_MEDIA_METADATA_IN_MEMORY) {
-    mediaMetadataCache.delete(mediaMetadataCache.keys().next().value);
-  }
-  mediaMetadataCache.set(path, metadata);
-}
+const thumbnailLoader = createAsyncResourceLoader({
+  concurrency: MAX_CONCURRENT_THUMBNAILS,
+  maxEntries: MAX_THUMBNAILS_IN_MEMORY,
+  isValid: isValidMediaPath,
+  load: generateThumbnail,
+  deliver: postThumbnail,
+});
 
-function processMediaMetadataQueue() {
-  while (activeMediaMetadataJobs < MAX_CONCURRENT_METADATA_JOBS && mediaMetadataQueue.length > 0) {
-    const path = mediaMetadataQueue.shift();
-    activeMediaMetadataJobs++;
-    readMediaMetadata(path)
-      .then((metadata) => {
-        rememberMediaMetadata(path, metadata);
-        postMediaMetadata(path, metadata);
-      })
-      .catch(() => {
-        rememberMediaMetadata(path, null);
-        postMediaMetadata(path, null);
-      })
-      .then(() => {
-        pendingMediaMetadata.delete(path);
-        activeMediaMetadataJobs--;
-        processMediaMetadataQueue();
-      });
-  }
+const mediaMetadataLoader = createAsyncResourceLoader({
+  concurrency: MAX_CONCURRENT_METADATA_JOBS,
+  maxEntries: MAX_MEDIA_METADATA_IN_MEMORY,
+  isValid: isValidMediaPath,
+  load: readMediaMetadata,
+  deliver: postMediaMetadata,
+});
+
+function requestThumbnail(path) {
+  thumbnailLoader.request(path);
 }
 
 function requestMediaMetadata(path) {
-  if (typeof path !== "string" || !isPathInFolderRoots(path)) return;
-  const filename = path.split("/").pop() || "";
-  if (!isPlayableFile(filename) || !file.exists(path)) return;
+  mediaMetadataLoader.request(path);
+}
 
-  if (mediaMetadataCache.has(path)) {
-    postMediaMetadata(path, mediaMetadataCache.get(path));
-    return;
+function shouldShowFile(filename, preferenceSnapshot = getPreferencesSnapshot()) {
+  return FileTypes.shouldShowFile(filename, preferenceSnapshot);
+}
+
+let debugLines = [];
+let debugFlushTimer = null;
+
+function flushDebugLog() {
+  debugFlushTimer = null;
+  try {
+    file.write(DEBUG_LOG_FILE, debugLines.join(""));
+  } catch (err) {
+    // Diagnostics must never interrupt browsing.
   }
-  if (pendingMediaMetadata.has(path)) return;
-
-  pendingMediaMetadata.add(path);
-  mediaMetadataQueue.push(path);
-  processMediaMetadataQueue();
 }
 
-// Skip directories (mirrored in constants.js)
-const SKIP_DIRECTORIES = new Set([
-  '.app', '.bundle', '.framework', '.plugin', '.component',
-  'node_modules', '__pycache__', '.venv', 'venv',
-  '.git', '.svn', '.hg', '.idea', '.vscode',
-  'build', 'dist', 'out', 'bin', 'target',
-  '.logicx', '.band', '.serato', '.xcodeproj', '.xcworkspace',
-  'Caches', '.cache', 'vendor', '.gem', 'Databases', 'Tags', '.Trash', 'Library', '.Spotlight-V100',
-]);
-
-// Skip extensions (mirrored in constants.js)
-const SKIP_EXTENSIONS = new Set([
-  'ds_store', 'localized', 'plist', 'json', 'xml', 'yaml', 'yml', 'ini', 'cfg', 'conf',
-  'txt', 'md', 'pdf', 'doc', 'docx', 'rtf', 'pages',
-  'js', 'ts', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'swift', 'sh', 'bash',
-  'zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz',
-  'db', 'sqlite', 'sql', 'cache', 'tmp', 'temp',
-  'tagset', 'tagpool', 'asd', 'als', 'logic', 'ptx', 'sessiondata',
-  'log', 'bak', 'old', 'swp', 'swo',
-]);
-
-function shouldShowFile(filename) {
-  if (!filename || filename.startsWith(".")) return false;
-  if (!filename.includes(".")) return false;
-
-  const ext = filename.split(".").pop().toLowerCase();
-  if (!ext || ext === filename) return false;
-  if (SKIP_EXTENSIONS.has(ext)) return false;
-
-  const filterImages = preferences.get("filterImages") ?? true;
-  const filterAudio = preferences.get("filterAudio") ?? true;
-  const videoOnly = preferences.get("videoOnly") ?? false;
-
-  const isVideo = videoExtensions.test(filename);
-  const isAudio = audioExtensions.test(filename);
-  const isImage = imageExtensions.test(filename);
-
-  if (videoOnly) return isVideo;
-  if (filterImages && isImage) return false;
-  if (filterAudio && isAudio) return false;
-
-  return isVideo || isAudio || isImage;
-}
-
-function isPlayableFile(filename) {
-  if (!filename || filename.startsWith(".")) return false;
-  if (!filename.includes(".")) return false;
-
-  const ext = filename.split(".").pop().toLowerCase();
-  if (!ext || ext === filename) return false;
-  if (SKIP_EXTENSIONS.has(ext)) return false;
-
-  return videoExtensions.test(filename) || audioExtensions.test(filename) || imageExtensions.test(filename);
+function resetDebugLog() {
+  debugLines = [`=== Quick Folders Debug Log - Session started at ${new Date().toISOString()} ===\n`];
+  flushDebugLog();
 }
 
 function logDebug(message, data = null) {
   try {
     const timestamp = new Date().toISOString();
     const payload = data ? ` ${JSON.stringify(data)}` : "";
-    const line = `${timestamp} ${message}${payload}\n`;
-    const existing = file.exists(DEBUG_LOG_FILE) ? (file.read(DEBUG_LOG_FILE) || "") : "";
-    file.write(DEBUG_LOG_FILE, existing + line);
+    debugLines.push(`${timestamp} ${message}${payload}\n`);
+    if (debugLines.length > MAX_DEBUG_LINES) debugLines.splice(1, debugLines.length - MAX_DEBUG_LINES);
+    // Folder scans can emit hundreds of entries. Batch them so logging stays
+    // diagnostic rather than becoming the dominant filesystem workload.
+    if (!debugFlushTimer) debugFlushTimer = setTimeout(flushDebugLog, DEBUG_FLUSH_DELAY);
   } catch (err) {
     // Ignore logging errors
   }
@@ -296,6 +197,15 @@ function logDebug(message, data = null) {
 
 const folderScanCache = new Map();
 const folderScanPromises = new Map();
+let folderScanUpdateTimer = null;
+
+function scheduleWindowUpdate() {
+  if (folderScanUpdateTimer) return;
+  folderScanUpdateTimer = setTimeout(() => {
+    folderScanUpdateTimer = null;
+    updateWindow();
+  }, 40);
+}
 
 async function scanFolderForPlayable(folderPath, depth = 0) {
   if (depth > 10) return false;
@@ -340,14 +250,14 @@ function ensureFolderScan(folderPath) {
       folderScanCache.set(folderPath, { status: "done", hasPlayable });
       folderScanPromises.delete(folderPath);
       logDebug("scan-done", { folderPath, hasPlayable });
-      updateWindow();
+      scheduleWindowUpdate();
       return hasPlayable;
     })
     .catch(() => {
       folderScanCache.set(folderPath, { status: "done", hasPlayable: false });
       folderScanPromises.delete(folderPath);
       logDebug("scan-error", { folderPath });
-      updateWindow();
+      scheduleWindowUpdate();
     });
 
   folderScanPromises.set(folderPath, promise);
@@ -363,34 +273,48 @@ let fileIndex = { extensions: new Set(), files: [] };
 let fileIndexRevision = 0;
 let isIndexing = false;
 let indexProgress = { filesProcessed: 0, totalEstimate: 0 };
+let activeIndexBuild = null;
 
-async function buildFileIndex() {
+function buildFileIndex({ afterCurrent = false } = {}) {
+  // Refresh commands and window startup can overlap. Sharing one promise keeps
+  // them from racing over the same index and duplicating an expensive scan.
+  if (activeIndexBuild) {
+    return afterCurrent ? activeIndexBuild.then(() => buildFileIndex()) : activeIndexBuild;
+  }
+  activeIndexBuild = runFileIndexBuild().finally(() => {
+    activeIndexBuild = null;
+  });
+  return activeIndexBuild;
+}
+
+async function runFileIndexBuild() {
   isIndexing = true;
   indexProgress = { filesProcessed: 0, totalEstimate: 0 };
-  
-  // Send message to UI that indexing is starting
   if (standaloneWindow) {
     standaloneWindow.postMessage("index-building", { progress: indexProgress });
   }
-  
-  fileIndex = { extensions: new Set(), files: [] };
 
-  for (const root of folderRoots) {
-    await indexFolderRecursive(root.path);
-  }
-
-  saveState();
-  fileIndexRevision++;
-  
-  isIndexing = false;
-  
-  // Send message to UI that indexing is complete
-  if (standaloneWindow) {
-    standaloneWindow.postMessage("index-complete", { progress: indexProgress });
+  const nextIndex = { extensions: new Set(), files: [] };
+  const rootPaths = folderRoots.map((root) => root.path);
+  const preferenceSnapshot = getPreferencesSnapshot();
+  try {
+    for (const rootPath of rootPaths) {
+      await indexFolderRecursive(rootPath, 0, nextIndex, indexProgress, preferenceSnapshot);
+    }
+    // Publish atomically: the UI keeps the previous usable index until the new
+    // scan is complete instead of observing a half-built global structure.
+    fileIndex = nextIndex;
+    fileIndexRevision++;
+    saveState();
+  } finally {
+    isIndexing = false;
+    if (standaloneWindow) {
+      standaloneWindow.postMessage("index-complete", { progress: indexProgress });
+    }
   }
 }
 
-async function indexFolderRecursive(folderPath, depth = 0) {
+async function indexFolderRecursive(folderPath, depth, targetIndex, progress, preferenceSnapshot) {
   try {
     const items = await file.list(folderPath);
     
@@ -415,19 +339,16 @@ async function indexFolderRecursive(folderPath, depth = 0) {
 
       if (isDir) {
         if (!SKIP_DIRECTORIES.has(itemName)) {
-          const maxDepth = preferences.get("maxIndexDepth") ?? DEFAULT_MAX_INDEX_DEPTH;
-          if (depth < maxDepth) subdirs.push(fullPath);
+          if (depth < preferenceSnapshot.maxIndexDepth) subdirs.push(fullPath);
         }
       } else {
-        const ext = itemName.split(".").pop().toLowerCase();
-        if (ext && ext !== itemName) {
-          if (SKIP_EXTENSIONS.has(ext)) continue;
+        const ext = FileTypes.getExtension(itemName);
+        if (ext) {
           const fileType = getFileTypeByExt(ext);
-          if (fileType === "other") continue;
-          const shouldShow = shouldShowFile(itemName);
-          fileIndex.extensions.add(ext);
-          if (shouldShow) {
-            fileIndex.files.push({
+          if (fileType === FILE_TYPES.OTHER) continue;
+          targetIndex.extensions.add(ext);
+          if (shouldShowFile(itemName, preferenceSnapshot)) {
+            targetIndex.files.push({
               name: itemName,
               path: fullPath,
               type: fileType,
@@ -435,23 +356,23 @@ async function indexFolderRecursive(folderPath, depth = 0) {
             });
           }
         }
-        indexProgress.filesProcessed++;
+        progress.filesProcessed++;
       }
 
       if ((i + 1) % BATCH_SIZE === 0) {
         await new Promise(resolve => setTimeout(resolve, 0));
-        if (standaloneWindow && isIndexing && indexProgress.filesProcessed % 1000 === 0) {
-          standaloneWindow.postMessage("index-progress", { progress: indexProgress });
+        if (standaloneWindow && isIndexing && progress.filesProcessed % 1000 === 0) {
+          standaloneWindow.postMessage("index-progress", { progress });
         }
       }
     }
     
     await new Promise(resolve => setTimeout(resolve, 0));
-    if (standaloneWindow && isIndexing && indexProgress.filesProcessed % 100 === 0) {
-      standaloneWindow.postMessage("index-progress", { progress: indexProgress });
+    if (standaloneWindow && isIndexing && progress.filesProcessed % 100 === 0) {
+      standaloneWindow.postMessage("index-progress", { progress });
     }
     for (const subdir of subdirs) {
-      await indexFolderRecursive(subdir, depth + 1);
+      await indexFolderRecursive(subdir, depth + 1, targetIndex, progress, preferenceSnapshot);
     }
   } catch (err) {
     // Silently continue on error
@@ -515,38 +436,10 @@ function loadState() {
   }
 }
 
-function folderHasPlayableContent(folderPath) {
-  try {
-    const listing = file.list(folderPath, { includeSubDir: false }) || [];
-
-    for (const item of listing) {
-      const itemName = item.filename || item.name;
-      const isDir = item.isDir || item.is_dir;
-      if (!itemName) continue;
-      if (itemName.startsWith(".")) continue;
-
-      if (isDir) {
-        if (SKIP_DIRECTORIES.has(itemName)) continue;
-        const fullPath = item.path || (folderPath.endsWith("/") ? folderPath + itemName : folderPath + "/" + itemName);
-        if (folderHasPlayableContent(fullPath)) {
-          return true;
-        }
-      } else {
-        if (isPlayableFile(itemName)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  } catch (err) {
-    return false;
-  }
-}
-
 function listFolder(path) {
   try {
     const listing = file.list(path, { includeSubDir: false }) || [];
+    const preferenceSnapshot = getPreferencesSnapshot();
     logDebug("list-folder", { path, items: listing.length });
     const filtered = listing
       .filter((item) => {
@@ -565,7 +458,7 @@ function listFolder(path) {
           return true;
         }
 
-        return shouldShowFile(itemName);
+        return shouldShowFile(itemName, preferenceSnapshot);
       });
     logDebug("list-folder-filtered", { path, kept: filtered.length, skipped: listing.length - filtered.length });
     return filtered
@@ -673,56 +566,48 @@ function getCurrentItems() {
   return listFolder(currentPath);
 }
 
+function getPreferencesSnapshot() {
+  return {
+    filterImages: preferences.get("filterImages") ?? true,
+    filterAudio: preferences.get("filterAudio") ?? true,
+    videoOnly: preferences.get("videoOnly") ?? false,
+    hideWatched: preferences.get("hideWatched") ?? false,
+    maxIndexDepth: preferences.get("maxIndexDepth") ?? DEFAULT_MAX_INDEX_DEPTH,
+    openWindowShortcut: preferences.get("openWindowShortcut") ?? "cmd+shift+a",
+    addFolderShortcut: preferences.get("addFolderShortcut") ?? "n",
+  };
+}
+
+function getCurrentFolderDepth() {
+  if (!currentPath) return 0;
+  const root = folderRoots.find((candidate) => BrowseState.isPathWithinRoots(currentPath, [candidate]));
+  if (!root) return 0;
+  return currentPath.substring(root.path.replace(/\/+$/, "").length).split("/").filter(Boolean).length;
+}
+
 function updateWindow() {
   logDebug("update-window", { currentPath, roots: folderRoots.length });
   const items = getCurrentItems();
   logDebug("update-window-items", { count: items.length, items: items.map(i => ({ name: i.name, isDir: i.isDir, scanning: i.scanning })) });
   
-  // Get current preferences
-  const filterImages = preferences.get("filterImages") ?? true;
-  const filterAudio = preferences.get("filterAudio") ?? true;
-  const videoOnly = preferences.get("videoOnly") ?? false;
-  const hideWatched = preferences.get("hideWatched") ?? false;
-  
-  // Determine if index is ready (has extensions or no folders to index)
+  const preferenceSnapshot = getPreferencesSnapshot();
   const indexReady = fileIndex.extensions.size > 0 || folderRoots.length === 0;
-  
-  // Calculate folder depth (number of levels deep from root folder)
-  let folderDepth = 0;
-  if (currentPath) {
-    // Find the matching root folder
-    const rootFolder = folderRoots.find(root => currentPath.startsWith(root.path));
-    if (rootFolder) {
-      // Count path segments after the root
-      const relativePath = currentPath.substring(rootFolder.path.length);
-      folderDepth = relativePath.split("/").filter(Boolean).length;
-    }
-  }
-  
-  // Use two-argument form: postMessage(type, data)
+
   standaloneWindow.postMessage("update-items", {
-    items: items,
+    items,
     currentPath: viewingWatched ? "@watched" : currentPath,
     atRoot: !currentPath && !viewingWatched,
-    viewingWatched: viewingWatched,
+    viewingWatched,
     availableExtensions: Array.from(fileIndex.extensions).sort(),
     indexedFiles: fileIndex.files.map((item) => ({
       ...item,
       watched: watchedPaths.has(item.path),
     })),
     indexRevision: fileIndexRevision,
-    indexReady: indexReady,
-    isIndexing: isIndexing,
-    folderDepth: folderDepth,
-    preferences: {
-      filterImages: filterImages,
-      filterAudio: filterAudio,
-      videoOnly: videoOnly,
-      hideWatched: hideWatched,
-      maxIndexDepth: preferences.get("maxIndexDepth") ?? DEFAULT_MAX_INDEX_DEPTH,
-      openWindowShortcut: preferences.get("openWindowShortcut") ?? "cmd+shift+a",
-      addFolderShortcut: preferences.get("addFolderShortcut") ?? "n",
-    },
+    indexReady,
+    isIndexing,
+    folderDepth: getCurrentFolderDepth(),
+    preferences: preferenceSnapshot,
   });
 }
 
@@ -770,8 +655,8 @@ function deleteItems(paths) {
       file.delete(path);
       if (file.exists(path)) throw new Error("The file still exists after deletion");
       watchedPaths.delete(path);
-      thumbnailCache.delete(path);
-      mediaMetadataCache.delete(path);
+      thumbnailLoader.remove(path);
+      mediaMetadataLoader.remove(path);
       succeeded.push(path);
     } catch (err) {
       failed.push({ path, reason: err && err.message ? err.message : "Deletion failed" });
@@ -814,30 +699,98 @@ async function addFolder() {
 
     const folderName = folderPath.split("/").pop() || folderPath;
     folderRoots.push({ path: folderPath, name: folderName });
-    
     updateWindow();
-    
-    buildFileIndex().then(() => {
-      updateWindow();
-    }).catch(err => {
-      // Ignore index errors
-    });
+
+    await buildFileIndex({ afterCurrent: true });
+    updateWindow();
   } catch (err) {
-    // Ignore errors
+    console.error("[Quick Folders] Failed to add folder:", err);
   }
+}
+
+let windowHandlersRegistered = false;
+
+function openItem({ path, isDir, isWatchedRoot } = {}) {
+  if (isWatchedRoot || path === "@watched") {
+    history = [];
+    currentPath = null;
+    viewingWatched = true;
+    updateWindow();
+    return;
+  }
+  if (!isPathInFolderRoots(path)) return;
+
+  if (isDir) {
+    history.push(currentPath);
+    currentPath = path;
+    viewingWatched = false;
+    updateWindow();
+    return;
+  }
+  if (!getFileItem(path)) return;
+  try {
+    core.open(path);
+  } catch (err) {
+    logDebug("open-file-error", { path, message: err && err.message });
+  }
+}
+
+function goBack() {
+  if (viewingWatched) {
+    viewingWatched = false;
+    currentPath = null;
+    history = [];
+  } else {
+    currentPath = history.length > 0 ? history.pop() || null : null;
+  }
+  updateWindow();
+}
+
+function navigateTo({ path } = {}) {
+  if (!isPathInFolderRoots(path)) return;
+  history = [];
+  currentPath = path;
+  viewingWatched = false;
+  updateWindow();
+}
+
+async function removeRoot({ path } = {}) {
+  const nextRoots = folderRoots.filter((root) => root.path !== path);
+  if (nextRoots.length === folderRoots.length) return;
+  folderRoots = nextRoots;
+  if (currentPath && BrowseState.isPathWithinRoots(currentPath, [{ path }])) {
+    currentPath = null;
+    history = [];
+  }
+  await buildFileIndex({ afterCurrent: true });
+  updateWindow();
+}
+
+function registerWindowHandlers() {
+  if (windowHandlersRegistered) return;
+  windowHandlersRegistered = true;
+  standaloneWindow.onMessage("open-item", openItem);
+  standaloneWindow.onMessage("go-back", goBack);
+  standaloneWindow.onMessage("request-state", updateWindow);
+  standaloneWindow.onMessage("request-thumbnail", (data) => requestThumbnail(data && data.path));
+  standaloneWindow.onMessage("request-media-metadata", (data) => requestMediaMetadata(data && data.path));
+  standaloneWindow.onMessage("navigate-to", navigateTo);
+  standaloneWindow.onMessage("set-watched", ({ paths, watched } = {}) => updateWatchedItems(paths, Boolean(watched)));
+  standaloneWindow.onMessage("delete-items", ({ paths } = {}) => deleteItems(paths));
+  standaloneWindow.onMessage("remove-root", removeRoot);
+  standaloneWindow.onMessage("add-folder", addFolder);
+  standaloneWindow.onMessage("refresh-index", async () => {
+    await buildFileIndex();
+    updateWindow();
+  });
 }
 
 function openWindow() {
   try {
     loadState();
 
-    try {
-      const header = `=== Quick Folders Debug Log - Session started at ${new Date().toISOString()} ===\n`;
-      file.write(DEBUG_LOG_FILE, header);
-      logDebug("plugin-initializing");
-    } catch (e) {
-      // Ignore log init errors
-    }
+    resetDebugLog();
+    logDebug("plugin-initializing");
     
     standaloneWindow.setProperty({ 
       title: "Quick Folders",
@@ -847,6 +800,7 @@ function openWindow() {
 
     standaloneWindow.setFrame(500, 600);
     standaloneWindow.loadFile("ui/index.html");
+    registerWindowHandlers();
     
     // After UI loads, trigger index build if folders exist
     setTimeout(() => {
@@ -859,100 +813,10 @@ function openWindow() {
       }
     }, 100);
 
-    standaloneWindow.onMessage("open-item", ({ path, isDir, isWatchedRoot }) => {
-      if (isWatchedRoot || path === "@watched") {
-        history = [];
-        currentPath = null;
-        viewingWatched = true;
-        updateWindow();
-        return;
-      }
-      if (isDir) {
-        history.push(currentPath);
-        currentPath = path;
-        viewingWatched = false;
-        updateWindow();
-      } else {
-        try {
-          core.open(path);
-        } catch (err) {
-          // Ignore errors
-        }
-      }
-    });
-
-    standaloneWindow.onMessage("go-back", () => {
-      if (viewingWatched) {
-        viewingWatched = false;
-        currentPath = null;
-        history = [];
-        updateWindow();
-        return;
-      }
-      if (history.length > 0) {
-        currentPath = history.pop() || null;
-      } else {
-        currentPath = null;
-      }
-      updateWindow();
-    });
-
-    // Listen for request-state from UI (happens when UI loads)
-    standaloneWindow.onMessage("request-state", () => {
-      updateWindow();
-    });
-
-    standaloneWindow.onMessage("request-thumbnail", (data) => {
-      requestThumbnail(data && data.path);
-    });
-
-    standaloneWindow.onMessage("request-media-metadata", (data) => {
-      requestMediaMetadata(data && data.path);
-    });
-
-    // Listen for navigate-to request (from breadcrumb clicks)
-    standaloneWindow.onMessage("navigate-to", ({ path }) => {
-      history = [];
-      currentPath = path;
-      viewingWatched = false;
-      updateWindow();
-    });
-
-    standaloneWindow.onMessage("set-watched", ({ paths, watched }) => {
-      updateWatchedItems(paths, Boolean(watched));
-    });
-
-    standaloneWindow.onMessage("delete-items", ({ paths }) => {
-      deleteItems(paths);
-    });
-
-    // Listen for remove-root request
-    standaloneWindow.onMessage("remove-root", async ({ path }) => {
-      folderRoots = folderRoots.filter((f) => f.path !== path);
-      if (currentPath && currentPath.startsWith(path)) {
-        currentPath = null;
-        history = [];
-      }
-      
-      await buildFileIndex();
-      updateWindow();
-    });
-
-    // Listen for add-folder request from UI
-    standaloneWindow.onMessage("add-folder", async () => {
-      await addFolder();
-    });
-
-    // Listen for refresh-index request from UI
-    standaloneWindow.onMessage("refresh-index", async () => {
-      await buildFileIndex();
-      updateWindow();
-    });
-
     standaloneWindow.open();
     updateWindow();
   } catch (err) {
-    // Ignore errors
+    console.error("[Quick Folders] Failed to open window:", err);
   }
 }
 
@@ -965,5 +829,5 @@ try {
   menu.addItem(openItem);
   menu.addItem(addItem);
 } catch (err) {
-  // Ignore menu registration errors
+  console.error("[Quick Folders] Failed to register menu shortcuts:", err);
 }

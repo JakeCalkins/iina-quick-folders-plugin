@@ -2,7 +2,7 @@
 
 Adds a custom window to the IINA media application which displays a user-defined set of directories for quickly viewing and playing media content.
 
-The user can trigger this with a simple hotkey (defaults are currently `A` to trigger the window and `N` to add new folders to the Quick Folders set).
+The user can trigger this with a simple hotkey (defaults are currently `Cmd + Shift + A` to open the window and `N` to add a folder).
 
 Adds preferences for filtering by filetype, hotkeys, and indexing depth. Go to `IINA Settings > Plugins > Quick Folders > Settings` to modify these.
 
@@ -21,7 +21,7 @@ To remove: `iina-plugin unlink quick-folders.iinaplugin`.
 
 - Launch IINA.
 - Install the plugin (see above).
-- Hit `A` to launch the window anywhere while using IINA.
+- Hit `Cmd + Shift + A` to launch the window anywhere while using IINA.
 - Hit `N` and add any directory you want.
 - Once directories are loaded and indexed, navigate using the UI or search to filter more efficiently.
 - Close the Quick Folders window anytime with `Cmd + W` (Ctrl on Windows/Linux).

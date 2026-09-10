@@ -1,7 +1,7 @@
 const QuickFoldersBrowseState = (() => {
-  const VIDEO_EXTENSIONS = /^(mp4|mkv|avi|mov|flv|wmv|webm|m4v|3gp|ts|mts|m2ts|mxf)$/;
-  const AUDIO_EXTENSIONS = /^(mp3|aac|flac|ogg|wav|wma|aiff|opus|m4a)$/;
-  const IMAGE_EXTENSIONS = /^(jpg|jpeg|png|gif|bmp|webp|svg|tiff|ico)$/;
+  const FileTypes = typeof module !== "undefined" && module.exports
+    ? require("./file-types.js")
+    : QuickFoldersFileTypes;
   function normalizePaths(paths) {
     if (!Array.isArray(paths)) return [];
     const unique = new Set();
@@ -39,15 +39,16 @@ const QuickFoldersBrowseState = (() => {
     const seen = new Set();
     const currentPreferences = preferences || {};
     (Array.isArray(extensions) ? extensions : []).forEach((extension) => {
-      const normalized = String(extension || "").toLowerCase().replace(/^\./, "");
+      const normalized = FileTypes.normalizeExtension(extension);
       if (!normalized || seen.has(normalized)) return;
       seen.add(normalized);
 
-      if (VIDEO_EXTENSIONS.test(normalized)) {
+      const fileType = FileTypes.getFileTypeByExt(normalized);
+      if (fileType === FileTypes.FILE_TYPES.VIDEO) {
         groups.video.push(normalized);
-      } else if (AUDIO_EXTENSIONS.test(normalized)) {
+      } else if (fileType === FileTypes.FILE_TYPES.AUDIO) {
         if (!currentPreferences.videoOnly && !currentPreferences.filterAudio) groups.audio.push(normalized);
-      } else if (IMAGE_EXTENSIONS.test(normalized)) {
+      } else if (fileType === FileTypes.FILE_TYPES.IMAGE) {
         if (!currentPreferences.videoOnly && !currentPreferences.filterImages) groups.image.push(normalized);
       }
     });
@@ -65,15 +66,14 @@ const QuickFoldersBrowseState = (() => {
 
   function matchesFileFilter(item, currentFilter, classifyExtension) {
     if (!item || currentFilter === "all" || item.isDir) return Boolean(item);
-    const name = String(item.name || "");
-    const lastDot = name.lastIndexOf(".");
-    const extension = lastDot > 0 ? name.substring(lastDot + 1).toLowerCase() : "";
+    const extension = FileTypes.getExtension(item.name);
     if (currentFilter.startsWith("ext:")) {
       return extension === currentFilter.substring(4).toLowerCase();
     }
-    return typeof classifyExtension === "function"
-      ? classifyExtension(extension) === currentFilter
-      : false;
+    const classifier = typeof classifyExtension === "function"
+      ? classifyExtension
+      : FileTypes.getFileTypeByExt;
+    return classifier(extension) === currentFilter;
   }
 
   function updateSelection(options) {

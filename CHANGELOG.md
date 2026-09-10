@@ -16,12 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Polished navigation, action, hover, and feedback animations with consistent icons and reduced-motion support
 - Unified header and footer edge treatments and stabilized the root-folder remove animation
+- Modularized shared file typing, indexed search, row rendering, dialogs, and media loading while reducing repeated work during rendering and indexing
 
 ### Fixed
 - Added adaptive colors for readable text and controls in macOS light mode
 - Kept the selected file type filter in sync when folder data refreshes, so All Files reliably restores the complete listing
 - Kept folders navigable while filtering files and kept video extensions available when audio files are disabled
 - Cleared stale selections after searches, filters, and external updates, and corrected empty-state messages
+- Restored backend file-type classification during indexing by sharing the classifier between runtimes
+- Prevented overlapping index scans and stale partial indexes during folder-list changes
 
 ## [2.2.2] - 2026-02-03
 
