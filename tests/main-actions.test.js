@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-test("main entry persists watched state and permanently deletes only validated files", () => {
+test("main entry persists watched state and permanently deletes only validated files", async () => {
   const statePath = "@data/quick-folders-state.json";
   const existing = new Set(["/media/a.mp4", "/media/b.mkv", "/media/failure.mov"]);
   let persistedState = JSON.stringify({
@@ -57,7 +57,17 @@ test("main entry persists watched state and permanently deletes only validated f
     console: { error() {}, log() {} },
     core: { open() {} },
     file: fileApi,
-    utils: { fileInPath() { return false; } },
+    utils: {
+      fileInPath(path) { return path === "/usr/bin/mdls"; },
+      async exec(path) {
+        assert.equal(path, "/usr/bin/mdls");
+        return {
+          status: 0,
+          stdout: "kMDItemDurationSeconds = 125\nkMDItemPixelHeight = 1080\nkMDItemPixelWidth = 1920\n",
+          stderr: "",
+        };
+      },
+    },
     preferences: { get(key) { return key === "hideWatched" ? true : undefined; } },
     menu: {
       item(title, callback) {
@@ -105,6 +115,14 @@ test("main entry persists watched state and permanently deletes only validated f
     handlers.get("go-back")();
     const returnedRoot = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.equal(returnedRoot.atRoot, true);
+
+    handlers.get("request-media-metadata")({ path: "/media/b.mkv" });
+    await new Promise((resolve) => realSetTimeout(resolve, 0));
+    const metadataResult = messages.filter((message) => message.type === "media-metadata-ready").at(-1);
+    assert.deepEqual(metadataResult, {
+      type: "media-metadata-ready",
+      data: { path: "/media/b.mkv", metadata: { duration: 125, height: 1080, width: 1920 } },
+    });
 
     handlers.get("delete-items")({
       paths: ["/media/a.mp4", "/outside/b.mkv", "/media/failure.mov"],

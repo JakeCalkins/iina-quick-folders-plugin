@@ -26,11 +26,25 @@
 
     <main class="pane">
       <header class="nav-bar">
-        <button class="back-btn hidden" id="back-btn" type="button" title="Go back">‹</button>
+        <button class="back-btn hidden" id="back-btn" type="button" title="Go back" aria-label="Go back">
+          <svg class="button-icon back-icon" viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M12.5 4.5L7 10l5.5 5.5" />
+          </svg>
+        </button>
         <div class="breadcrumb" id="breadcrumb">Quick Folders</div>
         <div class="header-buttons">
-          <button id="refresh-btn" class="icon-btn" type="button" title="Refresh folder index">↻</button>
-          <button id="add-folder-btn" class="add-btn" type="button" title="Add a new folder (keyboard: n)">Add Folder</button>
+          <button id="refresh-btn" class="icon-btn" type="button" title="Refresh folder index" aria-label="Refresh folder index">
+            <svg class="button-icon refresh-icon" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M15.6 7A6 6 0 1 0 16 11" />
+              <path d="M15.6 3.8V7h-3.2" />
+            </svg>
+          </button>
+          <button id="add-folder-btn" class="add-btn" type="button" title="Add a new folder (keyboard: n)">
+            <svg class="button-icon add-icon" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M10 4.5v11M4.5 10h11" />
+            </svg>
+            <span>Add Folder</span>
+          </button>
         </div>
       </header>
       <div class="divider"></div>
@@ -93,6 +107,7 @@
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
     <script src="../constants.js"></script>
     <script src="../browse-state.js"></script>
+    <script src="../media-metadata.js"></script>
     <script src="messaging.js"></script>
     <script src="search.js"></script>
     <script src="app.js"></script>

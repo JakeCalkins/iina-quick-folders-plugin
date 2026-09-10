@@ -1,5 +1,6 @@
 const { console, core, file, utils, menu, standaloneWindow, preferences } = iina;
 const BrowseState = require("./browse-state.js");
+const MediaMetadata = require("./media-metadata.js");
 
 
 const STATE_FILE = "@data/quick-folders-state.json";
@@ -9,6 +10,7 @@ const THUMBNAIL_SIZE = 128;
 const MAX_THUMBNAILS_IN_MEMORY = 200;
 const MAX_CONCURRENT_THUMBNAILS = 2;
 const THUMBNAIL_TOOL = "/usr/bin/qlmanage";
+const METADATA_TOOL = "/usr/bin/mdls";
 const THUMBNAIL_CACHE_DIR = `@tmp/quick-folders-thumbnails/${Date.now()}`;
 
 // File type patterns (mirrored in constants.js for UI)
@@ -21,6 +23,12 @@ const pendingThumbnails = new Set();
 const thumbnailQueue = [];
 let activeThumbnailJobs = 0;
 let thumbnailJobSequence = 0;
+const mediaMetadataCache = new Map();
+const pendingMediaMetadata = new Set();
+const mediaMetadataQueue = [];
+let activeMediaMetadataJobs = 0;
+const MAX_CONCURRENT_METADATA_JOBS = 3;
+const MAX_MEDIA_METADATA_IN_MEMORY = 500;
 
 function encodeBase64(bytes) {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -152,6 +160,71 @@ function requestThumbnail(path) {
   pendingThumbnails.add(path);
   thumbnailQueue.push(path);
   processThumbnailQueue();
+}
+
+async function readMediaMetadata(path) {
+  if (!utils.fileInPath(METADATA_TOOL)) return null;
+  const result = await utils.exec(METADATA_TOOL, [
+    "-name", "kMDItemDurationSeconds",
+    "-name", "kMDItemPixelHeight",
+    "-name", "kMDItemPixelWidth",
+    path,
+  ]);
+  if (result.status !== 0) return null;
+  const metadata = MediaMetadata.parseMdlsOutput(result.stdout);
+  return Object.keys(metadata).length > 0 ? metadata : null;
+}
+
+function postMediaMetadata(path, metadata) {
+  try {
+    standaloneWindow.postMessage("media-metadata-ready", { path, metadata });
+  } catch (err) {
+    // The window may have closed while metadata was being read.
+  }
+}
+
+function rememberMediaMetadata(path, metadata) {
+  if (mediaMetadataCache.size >= MAX_MEDIA_METADATA_IN_MEMORY) {
+    mediaMetadataCache.delete(mediaMetadataCache.keys().next().value);
+  }
+  mediaMetadataCache.set(path, metadata);
+}
+
+function processMediaMetadataQueue() {
+  while (activeMediaMetadataJobs < MAX_CONCURRENT_METADATA_JOBS && mediaMetadataQueue.length > 0) {
+    const path = mediaMetadataQueue.shift();
+    activeMediaMetadataJobs++;
+    readMediaMetadata(path)
+      .then((metadata) => {
+        rememberMediaMetadata(path, metadata);
+        postMediaMetadata(path, metadata);
+      })
+      .catch(() => {
+        rememberMediaMetadata(path, null);
+        postMediaMetadata(path, null);
+      })
+      .then(() => {
+        pendingMediaMetadata.delete(path);
+        activeMediaMetadataJobs--;
+        processMediaMetadataQueue();
+      });
+  }
+}
+
+function requestMediaMetadata(path) {
+  if (typeof path !== "string" || !isPathInFolderRoots(path)) return;
+  const filename = path.split("/").pop() || "";
+  if (!isPlayableFile(filename) || !file.exists(path)) return;
+
+  if (mediaMetadataCache.has(path)) {
+    postMediaMetadata(path, mediaMetadataCache.get(path));
+    return;
+  }
+  if (pendingMediaMetadata.has(path)) return;
+
+  pendingMediaMetadata.add(path);
+  mediaMetadataQueue.push(path);
+  processMediaMetadataQueue();
 }
 
 // Skip directories (mirrored in constants.js)
@@ -696,6 +769,7 @@ function deleteItems(paths) {
       if (file.exists(path)) throw new Error("The file still exists after deletion");
       watchedPaths.delete(path);
       thumbnailCache.delete(path);
+      mediaMetadataCache.delete(path);
       succeeded.push(path);
     } catch (err) {
       failed.push({ path, reason: err && err.message ? err.message : "Deletion failed" });
@@ -828,6 +902,10 @@ function openWindow() {
 
     standaloneWindow.onMessage("request-thumbnail", (data) => {
       requestThumbnail(data && data.path);
+    });
+
+    standaloneWindow.onMessage("request-media-metadata", (data) => {
+      requestMediaMetadata(data && data.path);
     });
 
     // Listen for navigate-to request (from breadcrumb clicks)

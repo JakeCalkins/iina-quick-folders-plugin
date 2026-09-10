@@ -137,8 +137,11 @@ let currentState = {
 
 const thumbnailCache = new Map();
 const pendingThumbnails = new Set();
+const mediaMetadataCache = new Map();
+const pendingMediaMetadata = new Set();
 let thumbnailObserver = null;
 const MAX_CACHED_THUMBNAILS = 200;
+const MAX_CACHED_MEDIA_METADATA = 500;
 
 function getFileIcon(filename, isDir) {
   if (isDir) return FILE_TYPE_ICONS.folder;
@@ -182,12 +185,55 @@ function requestThumbnail(thumbEl, filePath) {
   postMessage("request-thumbnail", { path: filePath });
 }
 
+function requestMediaMetadata(filePath) {
+  if (mediaMetadataCache.has(filePath) || pendingMediaMetadata.has(filePath)) return;
+  pendingMediaMetadata.add(filePath);
+  postMessage("request-media-metadata", { path: filePath });
+}
+
+function rememberMediaMetadata(filePath, metadata) {
+  if (mediaMetadataCache.size >= MAX_CACHED_MEDIA_METADATA) {
+    mediaMetadataCache.delete(mediaMetadataCache.keys().next().value);
+  }
+  mediaMetadataCache.set(filePath, metadata || null);
+}
+
+function renderMediaMetadataChips(infoEl, filePath) {
+  infoEl.querySelectorAll(".dynamic-metadata-chip").forEach((chip) => chip.remove());
+  const metadata = mediaMetadataCache.get(filePath);
+  if (!metadata) return;
+
+  const values = [
+    {
+      value: QuickFoldersMediaMetadata.formatDuration(metadata.duration),
+      className: "duration-chip",
+      title: "Duration",
+    },
+    {
+      value: QuickFoldersMediaMetadata.formatResolution(metadata.width, metadata.height),
+      className: "resolution-chip",
+      title: "Resolution",
+    },
+  ];
+  const insertionPoint = infoEl.querySelector(".watched-tag, .size-chip, .path-metadata");
+  values.forEach(({ value, className, title }) => {
+    if (!value) return;
+    const chip = document.createElement("span");
+    chip.className = `metadata-chip dynamic-metadata-chip ${className}`;
+    chip.textContent = value;
+    chip.title = title;
+    if (insertionPoint) infoEl.insertBefore(chip, insertionPoint);
+    else infoEl.appendChild(chip);
+  });
+}
+
 function observeThumbnail(thumbEl, filePath) {
   thumbEl.dataset.thumbnailPath = filePath;
   if (thumbnailObserver) {
     thumbnailObserver.observe(thumbEl);
   } else {
     requestThumbnail(thumbEl, filePath);
+    requestMediaMetadata(filePath);
   }
 }
 
@@ -216,6 +262,7 @@ if (typeof IntersectionObserver !== "undefined") {
       const filePath = entry.target.dataset.thumbnailPath;
       thumbnailObserver.unobserve(entry.target);
       requestThumbnail(entry.target, filePath);
+      requestMediaMetadata(filePath);
     });
   }, {
     root: itemListEl,
@@ -233,6 +280,17 @@ if (typeof iina !== "undefined" && iina.onMessage) {
     document.querySelectorAll(".thumb[data-thumbnail-path]").forEach((thumbEl) => {
       if (thumbEl.dataset.thumbnailPath === path) {
         showThumbnail(thumbEl, dataUrl);
+      }
+    });
+  });
+
+  iina.onMessage("media-metadata-ready", (data) => {
+    if (!data || typeof data.path !== "string") return;
+    pendingMediaMetadata.delete(data.path);
+    rememberMediaMetadata(data.path, data.metadata);
+    document.querySelectorAll(".info[data-media-path]").forEach((infoEl) => {
+      if (infoEl.dataset.mediaPath === data.path) {
+        renderMediaMetadataChips(infoEl, data.path);
       }
     });
   });
@@ -604,7 +662,8 @@ function renderItems() {
         
         // Make parent segments clickable
         if (!isLast) {
-          segmentEl.style.cursor = "pointer";
+          segmentEl.setAttribute("role", "button");
+          segmentEl.tabIndex = 0;
           segmentEl.addEventListener("click", () => {
           // Reconstruct path up to this segment
           let reconstructedPath = currentState.currentPath;
@@ -624,6 +683,12 @@ function renderItems() {
           
           postMessage("navigate-to", { path: targetPath });
         });
+          segmentEl.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              segmentEl.click();
+            }
+          });
       }
       
       breadcrumb.appendChild(segmentEl);
@@ -772,6 +837,7 @@ function renderItems() {
       }
     } else {
       // For files, show extension tag and metadata
+      infoEl.dataset.mediaPath = item.path;
       const lastDot = item.name.lastIndexOf(".");
       const ext = lastDot > 0 ? item.name.substring(lastDot + 1).toLowerCase() : "file";
       const extUpper = ext.toUpperCase();
@@ -793,6 +859,8 @@ function renderItems() {
       extTag.textContent = extUpper;
       infoEl.appendChild(extTag);
 
+      renderMediaMetadataChips(infoEl, item.path);
+
       if (item.watched) {
         const watchedTag = document.createElement("span");
         watchedTag.className = "watched-tag";
@@ -803,15 +871,16 @@ function renderItems() {
       // Show file size if available
       if (item.size) {
         const sizeSpan = document.createElement("span");
-        sizeSpan.className = "metadata";
+        sizeSpan.className = "metadata-chip size-chip";
         sizeSpan.textContent = formatFileSize(item.size);
+        sizeSpan.title = "File size";
         infoEl.appendChild(sizeSpan);
       }
       
       // If this is a search result (file from a subfolder), show the containing folder path
       if ((item.fromSearch && currentSearchQuery) || item.fromWatchedView) {
         const pathSpan = document.createElement("span");
-        pathSpan.className = "metadata";
+        pathSpan.className = "metadata path-metadata";
         
         // Get the folder path
         const lastSlash = item.path.lastIndexOf("/");
@@ -876,8 +945,8 @@ function renderItems() {
       removeBtn.className = "remove-btn";
       removeBtn.innerHTML = `
         <span class='remove-icon'>
-          <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M2 2L10 10M10 2L2 10" stroke="currentColor"/>
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4 4l8 8M12 4l-8 8" />
           </svg>
         </span>
         <span class='remove-text'>Remove</span>
