@@ -8,7 +8,7 @@ This is the recommended method because IINA can associate the plugin with its so
 
 1. Open **IINA → Settings → Plugins**.
 2. Choose **Install from GitHub**.
-3. Enter `https://github.com/JakeCalkins/iina-quick-folders-plugin`.
+3. Enter `JakeCalkins/iina-quick-folders-plugin` or the full repository URL.
 4. Confirm the installation, then restart IINA if requested.
 
 Press `⌘ ⇧ A` while IINA is active to open Quick Folders. Press `N` to add your first folder.
@@ -59,7 +59,7 @@ npm run dev:unlink
 You can also invoke IINA's CLI directly:
 
 ```sh
-/Applications/IINA.app/Contents/MacOS/iina-plugin link quick-folders.iinaplugin
+/Applications/IINA.app/Contents/MacOS/iina-plugin link .
 ```
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for the complete development workflow.
@@ -87,6 +87,10 @@ Metadata is loaded lazily for visible files using macOS services. Unsupported fo
 ### The window looks stale after development changes
 
 Restart IINA after backend changes. For UI-only work, close and reopen the Quick Folders window. Confirm that the development link points to the current clone.
+
+### IINA reports that the plugin is in the wrong format
+
+Make sure the repository name is exactly `JakeCalkins/iina-quick-folders-plugin`. This message can also appear when the latest GitHub release has no installable package and the repository source does not contain a root `Info.json`. Current versions keep the manifest and runtime at the repository root and CI verifies that contract.
 
 ### Reporting a reproducible problem
 

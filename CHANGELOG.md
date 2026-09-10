@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _No unreleased changes yet._
 
+## [2.3.2] - 2026-09-09
+
+### Fixed
+- Restored **Install from GitHub** by placing the IINA manifest and runtime at the repository root, and added validation to keep source and packaged installation layouts compatible
+- Made release preparation increment IINA's `ghVersion` update counter so published versions can be discovered reliably
+
 ## [2.3.0] - 2026-09-09
 
 ### Added

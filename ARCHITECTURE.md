@@ -2,6 +2,8 @@
 
 Quick Folders has two JavaScript runtimes: the IINA plugin backend and the standalone-window browser UI. Shared modules use a small global-plus-CommonJS pattern so the same behavior can run in WebKit and in Node tests.
 
+The repository root is deliberately also the plugin root. IINA's **Install from GitHub** fallback unpacks the default branch and reads `Info.json` from that root, so moving the manifest or runtime behind a wrapper directory breaks source installation.
+
 ## Backend
 
 - `main.js` owns IINA APIs, persisted state, folder navigation, indexing, and message handlers.

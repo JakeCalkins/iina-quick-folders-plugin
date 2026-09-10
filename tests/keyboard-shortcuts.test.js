@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const keyboard = require("../quick-folders.iinaplugin/ui/keyboard-shortcuts.js");
+const keyboard = require("../ui/keyboard-shortcuts.js");
 
 test("formats configured shortcuts as compact macOS key labels", () => {
   assert.equal(keyboard.formatShortcut("cmd+shift+a"), "⌘ ⇧ A");

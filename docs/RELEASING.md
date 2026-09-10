@@ -22,6 +22,7 @@ Releases are built and published by GitHub Actions. The release workflow tests t
 6. Commit the release preparation through a pull request and merge it.
 
 Do not create a tag until the release-preparation commit is on `main`.
+Do not create a GitHub release manually: the tag-triggered workflow creates it only after the package and checksum pass validation. `release:prepare` also increments IINA's integer `ghVersion` update counter.
 
 ## Publish
 

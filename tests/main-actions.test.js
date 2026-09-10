@@ -92,8 +92,8 @@ test("main entry persists watched state and permanently deletes only validated f
   const realSetTimeout = global.setTimeout;
   global.setTimeout = () => 0;
   try {
-    delete require.cache[require.resolve("../quick-folders.iinaplugin/main.js")];
-    require("../quick-folders.iinaplugin/main.js");
+    delete require.cache[require.resolve("../main.js")];
+    require("../main.js");
     menuCallbacks.get("Open Quick Folders Window")();
 
     const initialUpdate = messages.filter((message) => message.type === "update-items").at(-1).data;

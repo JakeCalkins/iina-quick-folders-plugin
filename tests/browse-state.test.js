@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const browseState = require("../quick-folders.iinaplugin/browse-state.js");
+const browseState = require("../browse-state.js");
 
 test("normalizes watched paths to unique non-empty strings", () => {
   assert.deepEqual(

@@ -4,7 +4,9 @@ import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const pluginRoot = join(repositoryRoot, "quick-folders.iinaplugin");
+// IINA's GitHub installer unpacks the repository itself as the plugin, so the
+// manifest and every manifest-relative runtime path must remain rooted here.
+const pluginRoot = repositoryRoot;
 const failures = [];
 
 function walk(directory, predicate) {
@@ -34,7 +36,7 @@ function checkManifest() {
   try {
     manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   } catch (error) {
-    fail(`quick-folders.iinaplugin/Info.json is invalid JSON: ${error.message}`);
+    fail(`Info.json is missing or invalid JSON: ${error.message}`);
     return;
   }
 

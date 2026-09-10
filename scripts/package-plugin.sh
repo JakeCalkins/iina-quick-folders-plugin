@@ -3,7 +3,6 @@ set -euo pipefail
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd -- "$script_dir/.." && pwd)"
-plugin_dir="$repository_root/quick-folders.iinaplugin"
 output_dir="${1:-$repository_root/dist}"
 
 for command in node zip unzip; do
@@ -13,7 +12,7 @@ for command in node zip unzip; do
   fi
 done
 
-version="$(node -p "JSON.parse(require('fs').readFileSync('$plugin_dir/Info.json', 'utf8')).version")"
+version="$(node -p "JSON.parse(require('fs').readFileSync('$repository_root/Info.json', 'utf8')).version")"
 mkdir -p "$output_dir"
 output_dir="$(cd -- "$output_dir" && pwd)"
 archive="$output_dir/quick-folders-v${version}.iinaplgz"
@@ -21,12 +20,16 @@ checksum="$archive.sha256"
 
 rm -f -- "$archive" "$checksum"
 (
-  cd -- "$plugin_dir"
-  find . -type f \
-    ! -name '.DS_Store' \
-    ! -name 'AGENTS.md' \
-    ! -name 'CLAUDE.md' \
-    -print \
+  cd -- "$repository_root"
+  {
+    find . -maxdepth 1 -type f \
+      \( -name 'Info.json' -o -name '*.js' -o -name '*.html' -o -name '*.css' \) \
+      -print
+    find ./ui -type f \
+      ! -name 'AGENTS.md' \
+      ! -name 'CLAUDE.md' \
+      -print
+  } \
     | LC_ALL=C sort \
     | sed 's#^\./##' \
     | zip -q -X "$archive" -@
