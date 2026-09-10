@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [2.3.5] - 2026-09-10
+
 ### Fixed
 - Made configured menu shortcuts use IINA's required key syntax, refresh while the plugin is running, and moved the conflicting `⌘ ⇧ A` default to `⌘ ⇧ K`
 - Restored the installed plugin runtime by exporting shared modules through IINA's empty CommonJS module wrapper
