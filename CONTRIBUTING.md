@@ -81,7 +81,7 @@ Choose the relevant scenarios for your change:
 - Navigate nested folders and return with both the back button and breadcrumbs
 - Combine fuzzy search with file-extension filters
 - Refresh a large index and confirm the UI remains responsive
-- Verify single, toggle, range, and select-all behavior
+- Verify plain-click playback plus modifier, range, Space-key, and select-all selection behavior
 - Mark watched/unwatched items and exercise the Watched view
 - Open media and verify thumbnail and metadata loading
 - Confirm delete behavior with both success and failure cases

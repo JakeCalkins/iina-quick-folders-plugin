@@ -22,6 +22,7 @@ test("main entry persists watched state and permanently deletes only validated f
   const messages = [];
   const deletedPaths = [];
   const openedPaths = [];
+  const executedTools = [];
   const menuItems = new Map();
   let mediaListCalls = 0;
 
@@ -62,12 +63,30 @@ test("main entry persists watched state and permanently deletes only validated f
     core: { open(path) { openedPaths.push(path); } },
     file: fileApi,
     utils: {
-      fileInPath(path) { return path === "/usr/bin/mdls"; },
+      fileInPath(path) {
+        return path === "/usr/bin/mdls" || path === "/opt/homebrew/bin/ffprobe";
+      },
       async exec(path) {
+        executedTools.push(path);
+        if (path === "/opt/homebrew/bin/ffprobe") {
+          return {
+            status: 0,
+            stdout: JSON.stringify({
+              streams: [
+                { codec_type: "video", codec_name: "h264", width: 1920, height: 1080, bit_rate: "8000000" },
+                { codec_type: "audio", codec_name: "aac", sample_rate: "48000", channels: 2 },
+              ],
+              format: { duration: "125", bit_rate: "8300000" },
+            }),
+            stderr: "",
+          };
+        }
         assert.equal(path, "/usr/bin/mdls");
         return {
           status: 0,
-          stdout: "kMDItemDurationSeconds = 125\nkMDItemPixelHeight = 1080\nkMDItemPixelWidth = 1920\n",
+          // Matroska commonly lacks useful Spotlight fields; the optional probe
+          // must fill these without making ffprobe a required dependency.
+          stdout: "kMDItemDurationSeconds = (null)\nkMDItemPixelHeight = (null)\nkMDItemPixelWidth = (null)\n",
           stderr: "",
         };
       },
@@ -127,6 +146,12 @@ test("main entry persists watched state and permanently deletes only validated f
     const returnedRoot = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.equal(returnedRoot.atRoot, true);
 
+    handlers.get("open-item")({ path: "/media", isDir: true });
+    const openedRoot = messages.filter((message) => message.type === "update-items").at(-1).data;
+    assert.equal(openedRoot.currentPath, "/media");
+    assert.equal(openedRoot.currentRootPath, "/media");
+    handlers.get("go-back")();
+
     const listCallsBeforeRefresh = mediaListCalls;
     global.setTimeout = realSetTimeout;
     await Promise.all([
@@ -147,8 +172,20 @@ test("main entry persists watched state and permanently deletes only validated f
     const metadataResult = messages.filter((message) => message.type === "media-metadata-ready").at(-1);
     assert.deepEqual(metadataResult, {
       type: "media-metadata-ready",
-      data: { path: "/media/b.mkv", metadata: { duration: 125, height: 1080, width: 1920 } },
+      data: {
+        path: "/media/b.mkv",
+        metadata: {
+          duration: 125,
+          height: 1080,
+          width: 1920,
+          videoBitRate: 8000000,
+          audioSampleRate: 48000,
+          audioChannels: 2,
+          codecs: ["H.264", "AAC"],
+        },
+      },
     });
+    assert.deepEqual(executedTools, ["/usr/bin/mdls", "/opt/homebrew/bin/ffprobe"]);
 
     handlers.get("delete-items")({
       paths: ["/media/a.mp4", "/outside/b.mkv", "/media/failure.mov"],

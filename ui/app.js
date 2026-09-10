@@ -56,12 +56,14 @@ setTimeout(() => {
 }, 100);
 
 let currentFilter = "all";
+let renderedExtensionOptionsKey = null;
 let currentSearchQuery = "";
 let compiledSearchQuery = QuickFoldersSearch.compileQuery("");
 let availableExtensions = [];
 let searchRenderTimer = null;
 let selectedPaths = new Set();
 let selectionAnchorPath = null;
+let focusedPath = null;
 let visibleItems = [];
 let actionPending = false;
 let toastTimer = null;
@@ -86,11 +88,22 @@ let currentState = {
 
 const mediaPreview = QuickFoldersMediaPreview.create({
   rootElement: itemListEl,
-  sendMessage: postMessage,
+  sendMessage: QuickFoldersMessaging.send,
   thumbnailCacheLimit: 200,
   metadataCacheLimit: 500,
 });
 const browseModel = QuickFoldersBrowseModel.create({ maxSearchResults: MAX_RENDERED_SEARCH_RESULTS });
+const interactions = QuickFoldersInteractions.create({
+  sendMessage: QuickFoldersMessaging.send,
+  resetBrowseContext() {
+    resetSearch();
+  },
+  changeFilter(filter) {
+    clearSelection(false);
+    currentFilter = filter;
+    renderItems();
+  },
+});
 const deleteDialog = QuickFoldersDialogs.create({
   element: deleteModal,
   initialFocus: confirmDeleteBtn,
@@ -160,29 +173,39 @@ function handleStateUpdate(state) {
 }
 
 function populateExtensionDropdown() {
+  // Index replacement is atomic, but an in-progress state may temporarily
+  // report no extensions. Keep the last usable native menu until completion.
+  if (currentState.isIndexing && renderedExtensionOptionsKey !== null && availableExtensions.length === 0) {
+    filterDropdown.value = currentFilter;
+    return;
+  }
   const extensionGroups = QuickFoldersBrowseState.groupAvailableExtensions(
     availableExtensions,
     currentPreferences
   );
-  [
-    [videoGroup, extensionGroups.video],
-    [audioGroup, extensionGroups.audio],
-    [imageGroup, extensionGroups.image],
-    [otherGroup, []],
-  ].forEach(([group, extensions]) => {
-    group.innerHTML = "";
-    extensions.forEach((extension) => {
-      const option = document.createElement("option");
-      option.value = `ext:${extension}`;
-      option.textContent = extension.toUpperCase();
-      group.appendChild(option);
+  // Replacing options while WebKit's native menu is open dismisses it. State
+  // updates are frequent, so rebuild only when the available choices change.
+  const optionsKey = JSON.stringify(extensionGroups);
+  if (optionsKey !== renderedExtensionOptionsKey) {
+    [
+      [videoGroup, extensionGroups.video],
+      [audioGroup, extensionGroups.audio],
+      [imageGroup, extensionGroups.image],
+      [otherGroup, []],
+    ].forEach(([group, extensions]) => {
+      group.innerHTML = "";
+      extensions.forEach((extension) => {
+        const option = document.createElement("option");
+        option.value = `ext:${extension}`;
+        option.textContent = extension.toUpperCase();
+        group.appendChild(option);
+      });
     });
-  });
+    renderedExtensionOptionsKey = optionsKey;
+  }
 
   const reconciledFilter = QuickFoldersBrowseState.reconcileExtensionFilter(currentFilter, extensionGroups);
-  if (!(currentState.isIndexing && currentFilter !== "all" && reconciledFilter === "all")) {
-    currentFilter = reconciledFilter;
-  }
+  currentFilter = reconciledFilter;
   filterDropdown.value = currentFilter;
 }
 
@@ -200,18 +223,35 @@ function clearSelection(shouldRender = true) {
   if (shouldRender) renderItems();
 }
 
-function selectItem(item, event) {
+function selectItem(item, event, behavior = {}) {
+  const shouldRestoreFocus = behavior.restoreFocus || (
+    document.activeElement &&
+    document.activeElement.dataset &&
+    document.activeElement.dataset.path === item.path
+  );
   const result = QuickFoldersBrowseState.updateSelection({
     visiblePaths: getSelectableItems().map((entry) => entry.path),
     selectedPaths: Array.from(selectedPaths),
     anchorPath: selectionAnchorPath,
     targetPath: item.path,
-    additive: Boolean(event.metaKey || event.ctrlKey),
+    additive: Boolean(behavior.additive || event.metaKey || event.ctrlKey),
     range: Boolean(event.shiftKey),
   });
   selectedPaths = new Set(result.selectedPaths);
   selectionAnchorPath = result.anchorPath;
+  focusedPath = item.path;
   renderItems();
+  if (shouldRestoreFocus) focusItem(item.path);
+}
+
+function focusItem(path) {
+  const rows = itemListEl.querySelectorAll(".row[data-path]");
+  const row = Array.from(rows).find((candidate) => candidate.dataset.path === path);
+  if (!row) return;
+  rows.forEach((candidate) => {
+    candidate.tabIndex = candidate === row ? 0 : -1;
+  });
+  row.focus();
 }
 
 function updateActionBar() {
@@ -236,13 +276,13 @@ function setSelectedWatched() {
   const watched = !items.every((item) => item.watched);
   actionPending = true;
   updateActionBar();
-  postMessage("set-watched", { paths: items.map((item) => item.path), watched });
+  QuickFoldersMessaging.send("set-watched", { paths: items.map((item) => item.path), watched });
 }
 
 function openSelectedItem() {
   const items = getSelectedItems();
   if (items.length !== 1) return;
-  postMessage("open-item", { path: items[0].path, isDir: false });
+  QuickFoldersMessaging.send("open-item", { path: items[0].path, isDir: false });
 }
 
 function showDeleteConfirmation() {
@@ -313,7 +353,7 @@ function deleteSelectedItems() {
   hideDeleteConfirmation();
   actionPending = true;
   updateActionBar();
-  postMessage("delete-items", { paths: items.map((item) => item.path) });
+  QuickFoldersMessaging.send("delete-items", { paths: items.map((item) => item.path) });
 }
 
 function resetSearch({ focus = false, render = false } = {}) {
@@ -333,29 +373,23 @@ function resetSearch({ focus = false, render = false } = {}) {
 
 function drawBreadcrumbSegments(segments) {
   breadcrumb.innerHTML = "";
+  const parentElements = [];
   segments.forEach((segment, index) => {
     const isCurrent = index === segments.length - 1;
-    const element = document.createElement("span");
+    const element = document.createElement(isCurrent ? "span" : "button");
     element.className = isCurrent ? "breadcrumb-current" : "breadcrumb-parent";
     element.textContent = segment.label;
     element.title = segment.path;
 
     if (!isCurrent) {
-      element.setAttribute("role", "button");
+      element.type = "button";
       const destinationName = segment.path.split("/").pop() || segment.path;
       element.setAttribute("aria-label", `Go to ${destinationName}`);
-      element.tabIndex = 0;
       const navigate = () => {
-        resetSearch();
-        postMessage("navigate-to", { path: segment.path });
+        interactions.navigateTo(segment.path);
       };
       element.addEventListener("click", navigate);
-      element.addEventListener("keydown", (event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          navigate();
-        }
-      });
+      parentElements.push(element);
     }
     breadcrumb.appendChild(element);
 
@@ -366,6 +400,7 @@ function drawBreadcrumbSegments(segments) {
       breadcrumb.appendChild(separator);
     }
   });
+  return parentElements;
 }
 
 function renderBreadcrumb() {
@@ -387,17 +422,20 @@ function renderBreadcrumb() {
     return;
   }
 
-  const segments = QuickFoldersView.getBreadcrumbSegments(currentState.currentPath);
+  const segments = QuickFoldersView.getBreadcrumbSegments(
+    currentState.currentPath,
+    currentState.currentRootPath,
+  );
   breadcrumb.title = currentState.currentPath;
-  drawBreadcrumbSegments(segments);
+  const parentElements = drawBreadcrumbSegments(segments);
 
-  // Layout is available on the next task. Collapse only parent labels, keeping
-  // their original target paths so visual truncation cannot alter navigation.
+  // Layout is available on the next task. Mutate labels in place rather than
+  // replacing the nodes: replacing a breadcrumb between pointer-down and
+  // pointer-up causes WebKit to discard the click.
   breadcrumbLayoutTimer = setTimeout(() => {
     breadcrumbLayoutTimer = null;
     for (let index = 0; index < segments.length - 1 && breadcrumb.scrollWidth > breadcrumb.clientWidth; index++) {
-      segments[index] = { ...segments[index], label: ".." };
-      drawBreadcrumbSegments(segments);
+      parentElements[index].textContent = "..";
     }
   }, 0);
 }
@@ -423,6 +461,7 @@ function renderItems() {
   const selectablePaths = new Set(filteredItems.filter((item) => !item.isDir).map((item) => item.path));
   selectedPaths = new Set(Array.from(selectedPaths).filter((path) => selectablePaths.has(path)));
   if (selectionAnchorPath && !selectablePaths.has(selectionAnchorPath)) selectionAnchorPath = null;
+  if (focusedPath && !filteredItems.some((item) => item.path === focusedPath)) focusedPath = null;
 
   itemListEl.innerHTML = "";
   updateActionBar();
@@ -458,6 +497,17 @@ function renderItems() {
 
   const groupedItems = QuickFoldersBrowseState.partitionWatched(filteredItems);
   const orderedItems = groupedItems.active.concat(groupedItems.watched);
+  function moveItemFocus(item, key) {
+    const currentIndex = orderedItems.findIndex((candidate) => candidate.path === item.path);
+    if (currentIndex === -1) return;
+    let nextIndex = currentIndex;
+    if (key === "Home") nextIndex = 0;
+    else if (key === "End") nextIndex = orderedItems.length - 1;
+    else if (key === "ArrowDown") nextIndex = Math.min(currentIndex + 1, orderedItems.length - 1);
+    else if (key === "ArrowUp") nextIndex = Math.max(currentIndex - 1, 0);
+    focusedPath = orderedItems[nextIndex].path;
+    focusItem(focusedPath);
+  }
   const fragment = document.createDocumentFragment();
   const itemViewOptions = {
     atRoot: currentState.atRoot,
@@ -465,20 +515,23 @@ function renderItems() {
     isIndexing: currentState.isIndexing,
     mediaPreview,
     selectedPaths,
+    focusedPath: focusedPath || (orderedItems[0] && orderedItems[0].path),
     onOpenFolder(folder) {
-      clearSelection(false);
-      postMessage("open-item", {
-        path: folder.path,
-        isDir: true,
-        isWatchedRoot: Boolean(folder.isWatchedRoot),
-      });
+      interactions.openFolder(folder);
     },
     onOpenFile(file) {
-      postMessage("open-item", { path: file.path, isDir: false });
+      QuickFoldersMessaging.send("open-item", { path: file.path, isDir: false });
     },
     onRemoveRoot(folder) {
-      postMessage("remove-root", { path: folder.path });
+      QuickFoldersMessaging.send("remove-root", { path: folder.path });
     },
+    onFocusItem(item) {
+      focusedPath = item.path;
+      itemListEl.querySelectorAll(".row[data-path]").forEach((row) => {
+        row.tabIndex = row.dataset.path === focusedPath ? 0 : -1;
+      });
+    },
+    onMoveFocus: moveItemFocus,
     onSelectFile: selectItem,
   };
 
@@ -496,24 +549,36 @@ function renderItems() {
     fragment.appendChild(QuickFoldersItemView.create(item, itemViewOptions));
   });
   itemListEl.appendChild(fragment);
+  // IINA can reopen this WebView after it was hidden for playback. WebKit does
+  // not always deliver a fresh IntersectionObserver callback on that resume,
+  // so explicitly sample only the visible/preload region after layout.
+  requestAnimationFrame(() => mediaPreview.requestVisible());
 }
+
+window.addEventListener("focus", () => {
+  requestAnimationFrame(() => mediaPreview.requestVisible());
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) requestAnimationFrame(() => mediaPreview.requestVisible());
+});
 
 // Back button handler
 backBtn.addEventListener("click", () => {
-  postMessage("go-back");
+  interactions.goBack();
 });
 
 // Add Folder button handler
 if (addFolderBtn) {
   addFolderBtn.addEventListener("click", () => {
-    postMessage("add-folder");
+    QuickFoldersMessaging.send("add-folder");
   });
 }
 
 // Refresh button handler
 if (refreshBtn) {
   refreshBtn.addEventListener("click", () => {
-    postMessage("refresh-index");
+    QuickFoldersMessaging.send("refresh-index");
   });
 }
 
@@ -547,11 +612,14 @@ if (clearSearchBtn) {
 
 // Filter dropdown handler
 if (filterDropdown) {
-  filterDropdown.addEventListener("change", (e) => {
-    clearSelection(false);
-    currentFilter = e.target.value;
-    renderItems();
-  });
+  const applyFilter = (event) => {
+    const nextFilter = event.currentTarget.value;
+    interactions.applyFilter(nextFilter, currentFilter);
+  };
+  // WebKit versions differ on whether native select commits arrive as input,
+  // change, or both. The idempotent handler supports each behavior.
+  filterDropdown.addEventListener("input", applyFilter);
+  filterDropdown.addEventListener("change", applyFilter);
 }
 
 if (watchBtn) watchBtn.addEventListener("click", setSelectedWatched);
@@ -616,11 +684,11 @@ document.addEventListener("keydown", (event) => {
 registerBackendMessages();
 
 // Request initial state from main.js
-postMessage("request-state");
+QuickFoldersMessaging.send("request-state");
 
 // Also request state after a delay to ensure we get updates
 setTimeout(() => {
-  postMessage("request-state");
+  QuickFoldersMessaging.send("request-state");
 }, 500);
 
 // Render initial empty state

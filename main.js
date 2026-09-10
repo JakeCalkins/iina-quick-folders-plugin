@@ -2,6 +2,7 @@ const { console, core, file, utils, menu, standaloneWindow, preferences } = iina
 const BrowseState = require("./browse-state.js");
 const FileTypes = require("./file-types.js");
 const MediaMetadata = require("./media-metadata.js");
+const ThumbnailService = require("./thumbnail-service.js");
 const KeyboardShortcuts = require("./ui/keyboard-shortcuts.js");
 const { createAsyncResourceLoader } = require("./async-resource-loader.js");
 
@@ -13,97 +14,25 @@ const DEFAULT_OPEN_WINDOW_SHORTCUT = "cmd+shift+k";
 const DEFAULT_ADD_FOLDER_SHORTCUT = "n";
 const LEGACY_OPEN_WINDOW_SHORTCUT = "cmd+shift+a";
 const SHORTCUT_REFRESH_INTERVAL = 1000;
-const THUMBNAIL_SIZE = 128;
 const MAX_THUMBNAILS_IN_MEMORY = 200;
 const MAX_CONCURRENT_THUMBNAILS = 2;
-const THUMBNAIL_TOOL = "/usr/bin/qlmanage";
 const METADATA_TOOL = "/usr/bin/mdls";
-const THUMBNAIL_CACHE_DIR = `@tmp/quick-folders-thumbnails/${Date.now()}`;
+const MEDIA_PROBE_TOOLS = Object.freeze([
+  "ffprobe",
+  "/opt/homebrew/bin/ffprobe",
+  "/usr/local/bin/ffprobe",
+  "/opt/local/bin/ffprobe",
+]);
 
 const { FILE_TYPES, SKIP_DIRECTORIES, getFileTypeByExt, isPlayableFile } = FileTypes;
 const MAX_DEBUG_LINES = 1000;
 const DEBUG_FLUSH_DELAY = 250;
 
-let thumbnailJobSequence = 0;
 const MAX_CONCURRENT_METADATA_JOBS = 3;
 const MAX_MEDIA_METADATA_IN_MEMORY = 500;
 
-function encodeBase64(bytes) {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  let encoded = "";
-
-  for (let i = 0; i < bytes.length; i += 3) {
-    const first = bytes[i];
-    const second = i + 1 < bytes.length ? bytes[i + 1] : 0;
-    const third = i + 2 < bytes.length ? bytes[i + 2] : 0;
-    const combined = (first << 16) | (second << 8) | third;
-
-    encoded += alphabet[(combined >> 18) & 63];
-    encoded += alphabet[(combined >> 12) & 63];
-    encoded += i + 1 < bytes.length ? alphabet[(combined >> 6) & 63] : "=";
-    encoded += i + 2 < bytes.length ? alphabet[combined & 63] : "=";
-  }
-
-  return encoded;
-}
-
-function hashPath(path) {
-  let hash = 2166136261;
-  for (let i = 0; i < path.length; i++) {
-    hash ^= path.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16);
-}
-
 function isPathInFolderRoots(path) {
   return BrowseState.isPathWithinRoots(path, folderRoots);
-}
-
-function readThumbnailDataUrl(path) {
-  let handle = null;
-  try {
-    handle = file.handle(path, "read");
-    const bytes = handle.readToEnd();
-    if (!bytes || bytes.length === 0) return null;
-    return `data:image/png;base64,${encodeBase64(bytes)}`;
-  } catch (err) {
-    return null;
-  } finally {
-    if (handle) {
-      try {
-        handle.close();
-      } catch (err) {
-        // Ignore close errors
-      }
-    }
-  }
-}
-
-async function generateThumbnail(path) {
-  if (!utils.fileInPath(THUMBNAIL_TOOL)) return null;
-
-  const outputDir = `${THUMBNAIL_CACHE_DIR}/${hashPath(path)}-${thumbnailJobSequence++}`;
-  const mkdirResult = await utils.exec("/bin/mkdir", ["-p", utils.resolvePath(outputDir)]);
-  if (mkdirResult.status !== 0) return null;
-
-  const result = await utils.exec(THUMBNAIL_TOOL, [
-    "-t",
-    "-s", String(THUMBNAIL_SIZE),
-    "-o", utils.resolvePath(outputDir),
-    path,
-  ]);
-  if (result.status !== 0) return null;
-
-  const generatedFiles = file.list(outputDir, { includeSubDir: false }) || [];
-  const thumbnail = generatedFiles.find((item) => {
-    const name = item.filename || item.name || "";
-    return !(item.isDir || item.is_dir) && name.toLowerCase().endsWith(".png");
-  });
-  if (!thumbnail) return null;
-
-  const thumbnailPath = thumbnail.path || `${outputDir}/${thumbnail.filename || thumbnail.name}`;
-  return readThumbnailDataUrl(thumbnailPath);
 }
 
 function postThumbnail(path, dataUrl) {
@@ -121,16 +50,64 @@ function isValidMediaPath(path) {
 }
 
 async function readMediaMetadata(path) {
-  if (!utils.fileInPath(METADATA_TOOL)) return null;
-  const result = await utils.exec(METADATA_TOOL, [
-    "-name", "kMDItemDurationSeconds",
-    "-name", "kMDItemPixelHeight",
-    "-name", "kMDItemPixelWidth",
-    path,
-  ]);
-  if (result.status !== 0) return null;
-  const metadata = MediaMetadata.parseMdlsOutput(result.stdout);
+  let metadata = {};
+  if (utils.fileInPath(METADATA_TOOL)) {
+    const result = await executeMetadataTool(METADATA_TOOL, [
+      "-name", "kMDItemDurationSeconds",
+      "-name", "kMDItemPixelHeight",
+      "-name", "kMDItemPixelWidth",
+      "-name", "kMDItemCodecs",
+      "-name", "kMDItemVideoBitRate",
+      "-name", "kMDItemAudioBitRate",
+      "-name", "kMDItemAudioSampleRate",
+      "-name", "kMDItemAudioChannelCount",
+      path,
+    ]);
+    if (result && result.status === 0) metadata = MediaMetadata.parseMdlsOutput(result.stdout);
+  }
+
+  const fileType = getFileTypeByExt(path);
+  const needsProbe = !metadata.duration
+    || ((fileType === FILE_TYPES.VIDEO || fileType === FILE_TYPES.IMAGE) && (!metadata.width || !metadata.height))
+    || (fileType !== FILE_TYPES.IMAGE && (!metadata.codecs || metadata.codecs.length === 0));
+  const probeTool = needsProbe ? getMediaProbeTool() : null;
+  if (probeTool) {
+    const result = await executeMetadataTool(probeTool, [
+      "-v", "error",
+      "-show_entries", "format=duration,bit_rate:stream=codec_type,codec_name,width,height,duration,bit_rate,sample_rate,channels",
+      "-of", "json",
+      path,
+    ]);
+    if (result && result.status === 0) {
+      metadata = MediaMetadata.mergeMetadata(metadata, MediaMetadata.parseFfprobeOutput(result.stdout));
+    }
+  }
+
   return Object.keys(metadata).length > 0 ? metadata : null;
+}
+
+async function executeMetadataTool(tool, args) {
+  try {
+    return await utils.exec(tool, args);
+  } catch (err) {
+    return null;
+  }
+}
+
+let discoveredMediaProbeTool;
+let didDiscoverMediaProbeTool = false;
+
+function getMediaProbeTool() {
+  if (didDiscoverMediaProbeTool) return discoveredMediaProbeTool;
+  didDiscoverMediaProbeTool = true;
+  discoveredMediaProbeTool = MEDIA_PROBE_TOOLS.find((tool) => {
+    try {
+      return utils.fileInPath(tool);
+    } catch (err) {
+      return false;
+    }
+  }) || null;
+  return discoveredMediaProbeTool;
 }
 
 function postMediaMetadata(path, metadata) {
@@ -141,11 +118,12 @@ function postMediaMetadata(path, metadata) {
   }
 }
 
-const thumbnailLoader = createAsyncResourceLoader({
+const thumbnailLoader = ThumbnailService.createThumbnailService({
+  file,
+  utils,
   concurrency: MAX_CONCURRENT_THUMBNAILS,
   maxEntries: MAX_THUMBNAILS_IN_MEMORY,
   isValid: isValidMediaPath,
-  load: generateThumbnail,
   deliver: postThumbnail,
 });
 
@@ -598,9 +576,14 @@ function migrateLegacyOpenWindowShortcut() {
   preferences.sync();
 }
 
+function getCurrentFolderRoot() {
+  if (!currentPath) return null;
+  return folderRoots.find((candidate) => BrowseState.isPathWithinRoots(currentPath, [candidate])) || null;
+}
+
 function getCurrentFolderDepth() {
   if (!currentPath) return 0;
-  const root = folderRoots.find((candidate) => BrowseState.isPathWithinRoots(currentPath, [candidate]));
+  const root = getCurrentFolderRoot();
   if (!root) return 0;
   return currentPath.substring(root.path.replace(/\/+$/, "").length).split("/").filter(Boolean).length;
 }
@@ -612,10 +595,12 @@ function updateWindow() {
   
   const preferenceSnapshot = getPreferencesSnapshot();
   const indexReady = fileIndex.extensions.size > 0 || folderRoots.length === 0;
+  const currentRoot = getCurrentFolderRoot();
 
   standaloneWindow.postMessage("update-items", {
     items,
     currentPath: viewingWatched ? "@watched" : currentPath,
+    currentRootPath: currentRoot ? currentRoot.path : null,
     atRoot: !currentPath && !viewingWatched,
     viewingWatched,
     availableExtensions: Array.from(fileIndex.extensions).sort(),

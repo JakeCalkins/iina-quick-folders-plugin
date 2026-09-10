@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _No unreleased changes yet._
 
+## [2.4.0] - 2026-09-10
+
+### Added
+- Expanded the IINA-compatible video, audio, and image formats available for browsing and filtering
+- Added lazy codec, bitrate, sample-rate, and channel chips alongside duration and resolution
+- Added generated preview artwork for media without a native thumbnail, with optional local `ffmpeg` frame and embedded-art extraction for non-native formats
+
+### Changed
+- Made a plain file click play immediately, while modifier-click, the selection control, and Space provide predictable multi-selection
+- Bounded thumbnail work with type-aware Quick Look, image resizing, safe temporary cleanup, deduplication, and in-memory caching
+
+### Fixed
+- Restored back-button, root-bounded breadcrumb, file-filter, and local browser-message interactions that could be lost during WebKit rerenders
+- Prevented native text selection while building a multi-file selection
+- Fixed thumbnail reads that incorrectly treated IINA's directory-relative result paths as filesystem-root paths
+- Avoided unbounded Quick Look work for unsupported containers such as MKV
+- Prevented lazy thumbnails and metadata chips from disappearing when IINA suspends animations or replaces the standalone WebView
+
 ## [2.3.5] - 2026-09-10
 
 ### Fixed

@@ -16,6 +16,14 @@ test("builds breadcrumb labels with stable navigation paths", () => {
     { label: "intake", path: "/Users/example/Desktop/intake" },
     { label: "docs", path: "/Users/example/Desktop/intake/docs" },
   ]);
+  assert.deepEqual(view.getBreadcrumbSegments(
+    "/Users/example/Desktop/intake/docs/reference/api",
+    "/Users/example/Desktop/intake/docs",
+  ), [
+    { label: "docs", path: "/Users/example/Desktop/intake/docs" },
+    { label: "reference", path: "/Users/example/Desktop/intake/docs/reference" },
+    { label: "api", path: "/Users/example/Desktop/intake/docs/reference/api" },
+  ]);
   assert.equal(view.truncateMiddle("abcdefghijklmnopqrstuvwxyz1234567890").length <= 30, true);
 });
 

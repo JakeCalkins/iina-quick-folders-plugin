@@ -1,5 +1,13 @@
 // Stateless row factory. Navigation and mutations stay in the app controller.
 const QuickFoldersItemView = (() => {
+  function getFileActivation(event, fromSelectionIndicator = false) {
+    if (fromSelectionIndicator || event.shiftKey || event.metaKey || event.ctrlKey) return "select";
+    // A double click emits two click events. Opening on the first click keeps
+    // playback immediate, while ignoring the second prevents duplicate opens.
+    if (Number(event.detail) > 1) return "ignore";
+    return "open";
+  }
+
   function createFolderInfo(item, options) {
     const info = document.createElement("div");
     info.className = "info";
@@ -97,6 +105,14 @@ const QuickFoldersItemView = (() => {
     row.dataset.path = item.path;
     row.setAttribute("role", "option");
     row.setAttribute("aria-selected", String(isSelected));
+    row.setAttribute("aria-disabled", String(Boolean(options.isIndexing)));
+    row.setAttribute("aria-label", item.isDir
+      ? `Open folder ${item.name}`
+      : `${QuickFoldersView.getDisplayName(item)}, ${isSelected ? "selected" : "not selected"}`);
+    row.title = item.isDir
+      ? "Open folder"
+      : "Open file. Hold Command, Control, or Shift to select.";
+    row.tabIndex = !options.isIndexing && options.focusedPath === item.path ? 0 : -1;
     row.classList.toggle("watched", Boolean(item.watched));
     row.classList.toggle("selected", isSelected);
     row.classList.toggle("disabled", Boolean(options.isIndexing));
@@ -114,10 +130,36 @@ const QuickFoldersItemView = (() => {
 
     if (!options.isIndexing) {
       row.addEventListener("click", (event) => {
-        if (item.isDir) options.onOpenFolder(item);
-        else options.onSelectFile(item, event);
+        if (item.isDir) {
+          options.onOpenFolder(item);
+          return;
+        }
+        const fromSelectionIndicator = event.target && event.target.classList &&
+          event.target.classList.contains("selection-indicator");
+        const activation = getFileActivation(event, fromSelectionIndicator);
+        if (activation === "select") {
+          options.onSelectFile(item, event, { additive: fromSelectionIndicator });
+        } else if (activation === "open") {
+          options.onOpenFile(item);
+        }
       });
-      if (!item.isDir) row.addEventListener("dblclick", () => options.onOpenFile(item));
+      row.addEventListener("focus", () => options.onFocusItem(item));
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.stopPropagation();
+          if (item.isDir) options.onOpenFolder(item);
+          else options.onOpenFile(item);
+        } else if (!item.isDir && (event.key === " " || event.key === "Spacebar")) {
+          event.preventDefault();
+          event.stopPropagation();
+          options.onSelectFile(item, event, { additive: true, restoreFocus: true });
+        } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+          event.preventDefault();
+          event.stopPropagation();
+          options.onMoveFocus(item, event.key);
+        }
+      });
     }
 
     if (!item.isDir) {
@@ -125,6 +167,7 @@ const QuickFoldersItemView = (() => {
       indicator.className = "selection-indicator";
       indicator.setAttribute("aria-hidden", "true");
       indicator.textContent = "✓";
+      indicator.title = isSelected ? "Deselect file" : "Select file";
       row.appendChild(indicator);
     } else if (options.atRoot && item.isRoot) {
       row.appendChild(createRemoveButton(item, options.onRemoveRoot));
@@ -133,5 +176,9 @@ const QuickFoldersItemView = (() => {
     return row;
   }
 
-  return { create };
+  return { create, getFileActivation };
 })();
+
+if (typeof module !== "undefined") {
+  module.exports = QuickFoldersItemView;
+}
