@@ -56,6 +56,14 @@ if (typeof iina !== "undefined" && iina.onMessage) {
       indexedSearchRecords = indexedFiles.map(file => QuickFoldersSearch.createRecord(file));
       indexedSearchRevision = state.indexRevision;
     }
+    if (selectedPaths.size > 0) {
+      const selectableStateItems = state.atRoot && currentSearchQuery
+        ? (state.items || []).concat(state.indexedFiles || [])
+        : (state.items || []);
+      const availablePaths = new Set(selectableStateItems.map((item) => item.path));
+      selectedPaths = new Set(Array.from(selectedPaths).filter((path) => availablePaths.has(path)));
+      if (selectionAnchorPath && !availablePaths.has(selectionAnchorPath)) selectionAnchorPath = null;
+    }
     if (state.preferences) currentPreferences = state.preferences;
     if (state.isIndexing) {
       spinnerContainer.classList.remove("hidden");
@@ -343,20 +351,7 @@ function matchesSearch(item) {
 }
 
 function matchesFilter(item) {
-  if (currentFilter === "all") return true;
-  
-  // If filter is by extension (e.g., "ext:mp4")
-  if (currentFilter.startsWith("ext:")) {
-    const ext = currentFilter.substring(4).toLowerCase();
-    if (item.isDir) return false;
-    return item.name.toLowerCase().endsWith("." + ext);
-  }
-  
-  // Type-based filter (video, audio, image, other)
-  if (item.isDir) return false;
-  const lastDot = item.name.lastIndexOf(".");
-  const extension = lastDot > 0 ? item.name.substring(lastDot + 1) : "";
-  return getFileTypeByExt(extension) === currentFilter;
+  return QuickFoldersBrowseState.matchesFileFilter(item, currentFilter, getFileTypeByExt);
 }
 
 function getFilteredItems() {
@@ -424,37 +419,13 @@ function populateExtensionDropdown() {
   imageGroup.innerHTML = "";
   otherGroup.innerHTML = "";
 
-  // Group extensions by type (only include main types, skip "other")
-  const videoExts = [];
-  const audioExts = [];
-  const imageExts = [];
-
-  for (const ext of availableExtensions) {
-    const extLower = ext.toLowerCase();
-    if (/^(mp4|mkv|avi|mov|flv|wmv|webm|m4v|3gp|ts|mts|m2ts|mxf)$/.test(extLower)) {
-      // Skip video if videoOnly mode is off and filterImages is on
-      if (!currentPreferences.videoOnly && !currentPreferences.filterAudio) {
-        videoExts.push(ext);
-      } else if (currentPreferences.videoOnly) {
-        // Always show video in video-only mode
-        videoExts.push(ext);
-      } else if (!currentPreferences.filterAudio) {
-        // If not in video-only mode, show video if filterAudio is off
-        videoExts.push(ext);
-      }
-    } else if (/^(mp3|aac|flac|ogg|wav|wma|aiff|opus|m4a)$/.test(extLower)) {
-      // Only show audio if filterAudio is false (filter is OFF)
-      if (!currentPreferences.filterAudio && !currentPreferences.videoOnly) {
-        audioExts.push(ext);
-      }
-    } else if (/^(jpg|jpeg|png|gif|bmp|webp|svg|tiff|ico)$/.test(extLower)) {
-      // Only show images if filterImages is false (filter is OFF)
-      if (!currentPreferences.filterImages && !currentPreferences.videoOnly) {
-        imageExts.push(ext);
-      }
-    }
-    // Skip "other" extensions
-  }
+  const extensionGroups = QuickFoldersBrowseState.groupAvailableExtensions(
+    availableExtensions,
+    currentPreferences
+  );
+  const videoExts = extensionGroups.video;
+  const audioExts = extensionGroups.audio;
+  const imageExts = extensionGroups.image;
 
   // Add options to appropriate groups (only if they have extensions)
   if (videoExts.length > 0) {
@@ -483,6 +454,12 @@ function populateExtensionDropdown() {
       imageGroup.appendChild(option);
     });
   }
+
+  const reconciledFilter = QuickFoldersBrowseState.reconcileExtensionFilter(currentFilter, extensionGroups);
+  if (!(currentState.isIndexing && currentFilter !== "all" && reconciledFilter === "all")) {
+    currentFilter = reconciledFilter;
+  }
+  filterDropdown.value = currentFilter;
 }
 
 function getSelectableItems() {
@@ -740,9 +717,10 @@ function renderItems() {
   if (filteredItems.length === 0) {
     const noResultsMsg = document.createElement("div");
     noResultsMsg.className = "empty";
-    noResultsMsg.textContent = currentPreferences.hideWatched && !currentSearchQuery
-      ? "No unwatched items in this folder"
-      : "No results match your search";
+    if (currentSearchQuery) noResultsMsg.textContent = "No results match your search";
+    else if (currentFilter !== "all") noResultsMsg.textContent = "No files match this filter";
+    else if (currentPreferences.hideWatched) noResultsMsg.textContent = "No unwatched items in this folder";
+    else noResultsMsg.textContent = "No items to display";
     itemListEl.appendChild(noResultsMsg);
     return;
   }
@@ -985,6 +963,7 @@ if (refreshBtn) {
 // Search input handler
 if (searchInput) {
   searchInput.addEventListener("input", (e) => {
+    clearSelection(false);
     currentSearchQuery = e.target.value;
     compiledSearchQuery = QuickFoldersSearch.compileQuery(currentSearchQuery);
     if (searchRenderTimer) clearTimeout(searchRenderTimer);
@@ -1003,6 +982,7 @@ if (clearSearchBtn) {
       searchRenderTimer = null;
     }
     currentSearchQuery = "";
+    clearSelection(false);
     compiledSearchQuery = QuickFoldersSearch.compileQuery("");
     if (searchInput) {
       searchInput.value = "";
@@ -1015,6 +995,7 @@ if (clearSearchBtn) {
 // Filter dropdown handler
 if (filterDropdown) {
   filterDropdown.addEventListener("change", (e) => {
+    clearSelection(false);
     currentFilter = e.target.value;
     renderItems();
   });

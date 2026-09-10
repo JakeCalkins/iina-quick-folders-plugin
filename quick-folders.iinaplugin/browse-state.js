@@ -1,4 +1,7 @@
 const QuickFoldersBrowseState = (() => {
+  const VIDEO_EXTENSIONS = /^(mp4|mkv|avi|mov|flv|wmv|webm|m4v|3gp|ts|mts|m2ts|mxf)$/;
+  const AUDIO_EXTENSIONS = /^(mp3|aac|flac|ogg|wav|wma|aiff|opus|m4a)$/;
+  const IMAGE_EXTENSIONS = /^(jpg|jpeg|png|gif|bmp|webp|svg|tiff|ico)$/;
   function normalizePaths(paths) {
     if (!Array.isArray(paths)) return [];
     const unique = new Set();
@@ -31,6 +34,48 @@ const QuickFoldersBrowseState = (() => {
     return { active, watched };
   }
 
+  function groupAvailableExtensions(extensions, preferences) {
+    const groups = { video: [], audio: [], image: [] };
+    const seen = new Set();
+    const currentPreferences = preferences || {};
+    (Array.isArray(extensions) ? extensions : []).forEach((extension) => {
+      const normalized = String(extension || "").toLowerCase().replace(/^\./, "");
+      if (!normalized || seen.has(normalized)) return;
+      seen.add(normalized);
+
+      if (VIDEO_EXTENSIONS.test(normalized)) {
+        groups.video.push(normalized);
+      } else if (AUDIO_EXTENSIONS.test(normalized)) {
+        if (!currentPreferences.videoOnly && !currentPreferences.filterAudio) groups.audio.push(normalized);
+      } else if (IMAGE_EXTENSIONS.test(normalized)) {
+        if (!currentPreferences.videoOnly && !currentPreferences.filterImages) groups.image.push(normalized);
+      }
+    });
+    return groups;
+  }
+
+  function reconcileExtensionFilter(currentFilter, groups) {
+    if (currentFilter === "all") return "all";
+    const availableFilters = new Set();
+    Object.keys(groups || {}).forEach((group) => {
+      (groups[group] || []).forEach((extension) => availableFilters.add(`ext:${extension}`));
+    });
+    return availableFilters.has(currentFilter) ? currentFilter : "all";
+  }
+
+  function matchesFileFilter(item, currentFilter, classifyExtension) {
+    if (!item || currentFilter === "all" || item.isDir) return Boolean(item);
+    const name = String(item.name || "");
+    const lastDot = name.lastIndexOf(".");
+    const extension = lastDot > 0 ? name.substring(lastDot + 1).toLowerCase() : "";
+    if (currentFilter.startsWith("ext:")) {
+      return extension === currentFilter.substring(4).toLowerCase();
+    }
+    return typeof classifyExtension === "function"
+      ? classifyExtension(extension) === currentFilter
+      : false;
+  }
+
   function updateSelection(options) {
     const visiblePaths = normalizePaths(options && options.visiblePaths);
     const targetPath = options && options.targetPath;
@@ -60,7 +105,15 @@ const QuickFoldersBrowseState = (() => {
     return { selectedPaths: [targetPath], anchorPath: targetPath };
   }
 
-  return { isPathWithinRoots, normalizePaths, partitionWatched, updateSelection };
+  return {
+    groupAvailableExtensions,
+    isPathWithinRoots,
+    matchesFileFilter,
+    normalizePaths,
+    partitionWatched,
+    reconcileExtensionFilter,
+    updateSelection,
+  };
 })();
 
 if (typeof module !== "undefined" && module.exports) {

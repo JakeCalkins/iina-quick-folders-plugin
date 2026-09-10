@@ -29,6 +29,39 @@ test("partitions watched files after active files and directories", () => {
   });
 });
 
+test("groups visible extensions without dropping video when audio is filtered", () => {
+  assert.deepEqual(browseState.groupAvailableExtensions(
+    ["MP4", ".mkv", "mp3", "jpg", "mp4", "txt"],
+    { filterAudio: true, filterImages: false, videoOnly: false }
+  ), {
+    video: ["mp4", "mkv"],
+    audio: [],
+    image: ["jpg"],
+  });
+});
+
+test("video-only extension groups contain video and exclude audio and images", () => {
+  assert.deepEqual(browseState.groupAvailableExtensions(
+    ["mp4", "mp3", "png"],
+    { filterAudio: false, filterImages: false, videoOnly: true }
+  ), { video: ["mp4"], audio: [], image: [] });
+});
+
+test("keeps an available filter across option rebuilds and resets stale filters", () => {
+  const groups = { video: ["mp4", "mkv"], audio: ["mp3"], image: [] };
+  assert.equal(browseState.reconcileExtensionFilter("ext:mp4", groups), "ext:mp4");
+  assert.equal(browseState.reconcileExtensionFilter("ext:mov", groups), "all");
+  assert.equal(browseState.reconcileExtensionFilter("all", groups), "all");
+});
+
+test("file filters preserve folder navigation and match extensions case-insensitively", () => {
+  const classify = (extension) => extension === "mp3" ? "audio" : "video";
+  assert.equal(browseState.matchesFileFilter({ name: "Subfolder", isDir: true }, "ext:mp4", classify), true);
+  assert.equal(browseState.matchesFileFilter({ name: "Movie.MP4", isDir: false }, "ext:mp4", classify), true);
+  assert.equal(browseState.matchesFileFilter({ name: "Movie.mkv", isDir: false }, "ext:mp4", classify), false);
+  assert.equal(browseState.matchesFileFilter({ name: "Concert.mp3", isDir: false }, "audio", classify), true);
+});
+
 test("single selection replaces the previous selection", () => {
   assert.deepEqual(browseState.updateSelection({
     visiblePaths: ["a", "b", "c"],
