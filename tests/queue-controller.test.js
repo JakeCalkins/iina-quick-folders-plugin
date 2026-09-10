@@ -9,7 +9,9 @@ function createTransfer() {
   const values = new Map();
   return {
     effectAllowed: "",
+    dragImage: null,
     getData(type) { return values.get(type) || ""; },
+    setDragImage(element, x, y) { this.dragImage = { element, x, y }; },
     setData(type, value) { values.set(type, value); },
   };
 }
@@ -23,6 +25,7 @@ class FakeElement {
     this.listeners = new Map();
     this.attributes = new Map();
     this.disabled = false;
+    this.parentNode = null;
     this.tabIndex = -1;
     this._classes = new Set();
     this.classList = {
@@ -39,10 +42,21 @@ class FakeElement {
   get innerHTML() { return this._innerHTML || ""; }
 
   appendChild(child) {
-    if (child.tagName === "#FRAGMENT") this.children.push(...child.children);
-    else this.children.push(child);
+    if (child.tagName === "#FRAGMENT") {
+      child.children.forEach((entry) => { entry.parentNode = this; });
+      this.children.push(...child.children);
+    } else {
+      child.parentNode = this;
+      this.children.push(child);
+    }
     return child;
   }
+
+  removeChild(child) {
+    this.children = this.children.filter((entry) => entry !== child);
+    child.parentNode = null;
+  }
+  remove() { if (this.parentNode) this.parentNode.removeChild(this); }
 
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
   getAttribute(name) { return this.attributes.get(name); }
@@ -89,6 +103,7 @@ function installControllerDom() {
     createElement(tagName) { return new FakeElement(tagName, fakeDocument); },
     createDocumentFragment() { return new FakeElement("#fragment", fakeDocument); },
   };
+  fakeDocument.body = new FakeElement("body", fakeDocument);
   global.document = fakeDocument;
   global.QuickFoldersQueueState = QueueState;
   global.QuickFoldersBrowseState = BrowseState;
@@ -177,6 +192,9 @@ test("queue editor multi-selects, multi-drags, reorders, and accepts bucket drop
 
     const dataTransfer = createTransfer();
     rows[0].dispatch("dragstart", { dataTransfer });
+    assert.equal(dataTransfer.dragImage.element.classList.contains("drag-preview-reorder"), true);
+    assert.equal(document.body.classList.contains("dragging-queue"), true);
+    assert.equal(elements.list.classList.contains("reordering"), true);
     rows[2].dispatch("drop", { clientY: 75, dataTransfer });
     assert.deepEqual(messages.at(-1), {
       type: "queue-reorder",
@@ -186,14 +204,24 @@ test("queue editor multi-selects, multi-drags, reorders, and accepts bucket drop
         position: "after",
       },
     });
+    rows[0].dispatch("dragend");
+    assert.equal(document.body.classList.contains("dragging-queue"), false);
+    assert.equal(elements.list.classList.contains("reordering"), false);
+    assert.equal(document.body.querySelector(".drag-preview"), null);
 
     const bucketTransfer = createTransfer();
-    QueueController.writeDraggedPaths({ dataTransfer: bucketTransfer }, ["/media/c.mov"]);
+    controller.startExternalDrag(
+      { dataTransfer: bucketTransfer }, ["/media/c.mov"], "Example clip",
+    );
+    assert.equal(bucketTransfer.dragImage.element.classList.contains("drag-preview-add"), true);
+    assert.equal(document.body.classList.contains("dragging-media"), true);
     elements.toggleButton.dispatch("drop", { dataTransfer: bucketTransfer });
     assert.deepEqual(messages.at(-1), {
       type: "queue-add",
       data: { paths: ["/media/c.mov"] },
     });
+    assert.equal(document.body.classList.contains("dragging-media"), false);
+    assert.equal(document.body.querySelector(".drag-preview"), null);
   } finally {
     uninstallControllerDom();
   }

@@ -55,6 +55,10 @@
   --queue-panel-bg: rgba(20, 20, 23, 0.96);
   --queue-row-bg: rgba(255, 255, 255, 0.045);
   --queue-drop-bg: rgba(0, 217, 255, 0.2);
+  --drag-preview-bg: rgba(29, 30, 35, 0.98);
+  --drag-preview-border: rgba(255, 255, 255, 0.16);
+  --drag-preview-shadow: rgba(0, 0, 0, 0.42);
+  --accent-contrast: #061216;
 }
 
 /* Browse selection and file actions */
@@ -919,13 +923,15 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 0;
   padding: 0;
   border: 1px solid var(--button-border);
   border-radius: 10px;
   background: var(--chip-bg);
   color: var(--text);
   cursor: pointer;
-  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, box-shadow 170ms ease, transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  overflow: visible;
+  transition: width 180ms ease, flex-basis 180ms ease, color 150ms ease, background-color 150ms ease, border-color 150ms ease, box-shadow 170ms ease, transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .queue-bucket svg {
@@ -936,6 +942,21 @@ body {
   stroke-width: 1.65;
   stroke-linecap: round;
   stroke-linejoin: round;
+  flex: 0 0 auto;
+  pointer-events: none;
+}
+
+.queue-drop-label {
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  color: currentColor;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: max-width 180ms ease, opacity 120ms ease;
 }
 
 .queue-bucket:hover,
@@ -948,11 +969,11 @@ body {
 }
 
 .queue-bucket.drag-active {
-  color: var(--accent);
+  color: var(--accent-contrast);
   border-color: var(--accent);
-  background: var(--queue-drop-bg);
-  box-shadow: 0 0 0 4px var(--accent-hover-bg), 0 5px 16px var(--accent-hover-shadow);
-  transform: translateY(-2px) scale(1.09);
+  background: linear-gradient(135deg, var(--accent-secondary), var(--accent));
+  box-shadow: 0 0 0 4px var(--accent-hover-bg), 0 6px 18px var(--accent-hover-shadow);
+  transform: translateY(-1px) scale(1.025);
 }
 
 .queue-bucket.just-added {
@@ -976,20 +997,105 @@ body {
   border: 2px solid var(--queue-panel-bg);
   border-radius: 9px;
   background: var(--accent);
-  color: #061216;
+  color: var(--accent-contrast);
   font-size: 9px;
   font-weight: 800;
   line-height: 1;
+  pointer-events: none;
+}
+
+.dragging-media .queue-bucket {
+  width: 120px;
+  flex-basis: 120px;
+  gap: 6px;
+}
+
+.dragging-media .queue-drop-label {
+  max-width: 78px;
+  opacity: 1;
 }
 
 .dragging-media .queue-bucket:not(.drag-active) {
   border-color: var(--accent);
   color: var(--accent);
-  animation: queueBucketHint 800ms ease-in-out infinite alternate;
+  background: var(--accent-hover-bg);
+  animation: queueBucketReady 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-@keyframes queueBucketHint {
-  to { box-shadow: 0 0 0 3px var(--accent-hover-bg); }
+@keyframes queueBucketReady {
+  from { transform: scale(0.94); }
+  to { transform: scale(1); }
+}
+
+/* A compact, deliberate drag image replaces WebKit's translucent full-row
+   snapshot. It is attached only for the duration of a drag operation. */
+.drag-preview {
+  position: fixed;
+  top: -120px;
+  left: 12px;
+  z-index: 10000;
+  width: 230px;
+  height: 50px;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: var(--drag-preview-bg);
+  border: 1px solid var(--drag-preview-border);
+  border-radius: 13px;
+  box-shadow: 0 10px 28px var(--drag-preview-shadow);
+  pointer-events: none;
+}
+
+.drag-preview-icon {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  background: var(--accent-hover-bg);
+  border-radius: 9px;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.drag-preview-reorder .drag-preview-icon { font-size: 17px; }
+
+.drag-preview-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.drag-preview-copy strong,
+.drag-preview-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drag-preview-copy strong { font-size: 12px; font-weight: 700; }
+.drag-preview-copy span { color: var(--muted); font-size: 9px; font-weight: 600; }
+
+.drag-preview-count {
+  min-width: 23px;
+  height: 23px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  color: #061216;
+  background: var(--accent);
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 800;
 }
 
 .search-input:hover {
@@ -1219,6 +1325,13 @@ body {
 
 .row:active {
   transform: scale(0.992);
+}
+
+.row.dragging {
+  opacity: 0.3;
+  background: var(--accent-hover-bg);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  transform: scale(0.985);
 }
 
 .row:focus-visible {
@@ -1741,7 +1854,10 @@ body {
   min-height: 0;
   overflow-y: auto;
   padding: 8px;
+  transition: background-color 160ms ease;
 }
+
+.queue-list.reordering { background: var(--accent-focus-bg); }
 
 .queue-empty {
   height: 100%;
@@ -1811,7 +1927,16 @@ body {
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
-.queue-row.dragging { opacity: 0.5; }
+.queue-row.dragging {
+  opacity: 0.3;
+  transform: scale(0.98);
+}
+
+.queue-row.drop-before,
+.queue-row.drop-after {
+  background: var(--queue-drop-bg);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
 
 .queue-row.drop-before::before,
 .queue-row.drop-after::after {
@@ -1819,14 +1944,14 @@ body {
   position: absolute;
   left: 8px;
   right: 8px;
-  height: 2px;
-  border-radius: 1px;
+  height: 3px;
+  border-radius: 2px;
   background: var(--accent);
   box-shadow: 0 0 7px var(--accent-hover-shadow);
 }
 
-.queue-row.drop-before::before { top: -2px; }
-.queue-row.drop-after::after { bottom: -2px; }
+.queue-row.drop-before::before { top: -3px; }
+.queue-row.drop-after::after { bottom: -3px; }
 
 .queue-grip {
   color: var(--muted);
@@ -1984,6 +2109,10 @@ button:focus-visible,
     --icon-bg: rgba(0, 0, 0, 0.08);
     --chrome-bg: rgba(250, 250, 252, 0.94);
     --chrome-shadow: rgba(0, 0, 0, 0.18);
+    --drag-preview-bg: rgba(252, 252, 253, 0.98);
+    --drag-preview-border: rgba(0, 0, 0, 0.14);
+    --drag-preview-shadow: rgba(0, 0, 0, 0.22);
+    --accent-contrast: #fff;
   }
 
   .breadcrumb-parent {

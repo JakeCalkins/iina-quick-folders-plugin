@@ -618,14 +618,11 @@ function renderItems() {
         Array.from(selectedPaths),
         item.path,
       );
-      queueController.setExternalDragPaths(paths);
-      queueController.writeDraggedPaths(event, paths);
-      document.body.classList.add("dragging-media");
+      queueController.startExternalDrag(event, paths, QuickFoldersView.getDisplayName(item));
       return paths;
     },
     onDragEnd() {
-      queueController.setExternalDragPaths([]);
-      document.body.classList.remove("dragging-media");
+      queueController.endExternalDrag();
     },
   };
 

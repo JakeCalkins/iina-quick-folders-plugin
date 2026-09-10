@@ -24,6 +24,7 @@ _No unreleased changes yet._
 - Restyled metadata chips as quiet, borderless labels with adaptive light and dark appearance
 
 ### Fixed
+- Polished file and queue drag-and-drop with compact drag previews, a labeled queue target, clearer source feedback, and more visible reorder positions.
 - Restored immediate media previews during slow native thumbnail extraction, prioritized metadata chips, clarified queue action buttons, and prevented the root-folder Remove label from clipping
 - Restored back-button, root-bounded breadcrumb, file-filter, and local browser-message interactions that could be lost during WebKit rerenders
 - Prevented native text selection while building a multi-file selection

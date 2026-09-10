@@ -22,6 +22,35 @@ const QuickFoldersQueueController = (() => {
     event.dataTransfer.setData("text/plain", paths.join("\n"));
   }
 
+  function createDragPreview({ label, count, mode }) {
+    const preview = document.createElement("div");
+    preview.className = `drag-preview drag-preview-${mode}`;
+
+    const icon = document.createElement("span");
+    icon.className = "drag-preview-icon";
+    icon.textContent = mode === "reorder" ? "↕" : "+";
+    icon.setAttribute("aria-hidden", "true");
+
+    const copy = document.createElement("span");
+    copy.className = "drag-preview-copy";
+    const title = document.createElement("strong");
+    title.textContent = count > 1 ? `${count} selected items` : label;
+    const detail = document.createElement("span");
+    detail.textContent = mode === "reorder" ? "Reorder queue" : "Add to queue";
+    copy.appendChild(title);
+    copy.appendChild(detail);
+
+    preview.appendChild(icon);
+    preview.appendChild(copy);
+    if (count > 1) {
+      const badge = document.createElement("span");
+      badge.className = "drag-preview-count";
+      badge.textContent = String(count);
+      preview.appendChild(badge);
+    }
+    return preview;
+  }
+
   function create(options) {
     const {
       panel, toggleButton, badge, list, count, clearButton, removeButton,
@@ -34,6 +63,44 @@ const QuickFoldersQueueController = (() => {
     let externalDragPaths = [];
     let queueDragPaths = [];
     let dragDepth = 0;
+    let dragPreview = null;
+    let dropMarkerRow = null;
+
+    function removeDragPreview() {
+      if (!dragPreview) return;
+      if (typeof dragPreview.remove === "function") dragPreview.remove();
+      else if (dragPreview.parentNode) dragPreview.parentNode.removeChild(dragPreview);
+      dragPreview = null;
+    }
+
+    function setDragPreview(event, paths, label, mode) {
+      const transfer = event && event.dataTransfer;
+      if (!transfer || typeof transfer.setDragImage !== "function" || !document.body) return;
+      removeDragPreview();
+      dragPreview = createDragPreview({
+        label: label || "Media item",
+        count: paths.length,
+        mode,
+      });
+      document.body.appendChild(dragPreview);
+      // WebKit snapshots this node synchronously. Keeping it in the document
+      // until dragend avoids a brief fallback to the oversized native ghost.
+      transfer.setDragImage(dragPreview, 24, 24);
+    }
+
+    function clearDropMarkers() {
+      if (dropMarkerRow) dropMarkerRow.classList.remove("drop-before", "drop-after");
+      dropMarkerRow = null;
+    }
+
+    function clearDragChrome() {
+      dragDepth = 0;
+      toggleButton.classList.remove("drag-active");
+      list.classList.remove("reordering");
+      if (document.body) document.body.classList.remove("dragging-media", "dragging-queue");
+      clearDropMarkers();
+      removeDragPreview();
+    }
 
     function orderedPaths() {
       return items.map((item) => item.path);
@@ -187,25 +254,30 @@ const QuickFoldersQueueController = (() => {
           removeButton.textContent = "Remove 1";
         }
         writeDraggedPaths(event, queueDragPaths);
+        setDragPreview(event, queueDragPaths, QuickFoldersView.getDisplayName(item), "reorder");
         row.classList.add("dragging");
+        list.classList.add("reordering");
+        if (document.body) document.body.classList.add("dragging-queue");
       });
       row.addEventListener("dragend", () => {
         queueDragPaths = [];
         row.classList.remove("dragging");
-        list.querySelectorAll(".drop-before, .drop-after").forEach((element) => {
-          element.classList.remove("drop-before", "drop-after");
-        });
+        clearDragChrome();
       });
       row.addEventListener("dragover", (event) => {
         if (queueDragPaths.length === 0) return;
         event.preventDefault();
+        clearDropMarkers();
         const bounds = row.getBoundingClientRect();
         const positionName = event.clientY >= bounds.top + bounds.height / 2 ? "after" : "before";
         row.classList.toggle("drop-before", positionName === "before");
         row.classList.toggle("drop-after", positionName === "after");
+        dropMarkerRow = row;
         if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
       });
-      row.addEventListener("dragleave", () => row.classList.remove("drop-before", "drop-after"));
+      row.addEventListener("dragleave", () => {
+        if (dropMarkerRow === row) clearDropMarkers();
+      });
       row.addEventListener("drop", (event) => {
         if (queueDragPaths.length === 0) return;
         event.preventDefault();
@@ -277,8 +349,9 @@ const QuickFoldersQueueController = (() => {
     toggleButton.addEventListener("drop", (event) => {
       event.preventDefault();
       dragDepth = 0;
-      toggleButton.classList.remove("drag-active");
       const paths = readDraggedPaths(event, externalDragPaths);
+      externalDragPaths = [];
+      clearDragChrome();
       if (paths.length > 0) sendMessage("queue-add", { paths });
     });
     list.addEventListener("dragover", (event) => {
@@ -294,8 +367,17 @@ const QuickFoldersQueueController = (() => {
 
     render();
     return {
+      endExternalDrag() {
+        externalDragPaths = [];
+        clearDragChrome();
+      },
       isOpen,
-      setExternalDragPaths(paths) { externalDragPaths = QuickFoldersQueueState.normalizePaths(paths); },
+      startExternalDrag(event, paths, label) {
+        externalDragPaths = QuickFoldersQueueState.normalizePaths(paths);
+        writeDraggedPaths(event, externalDragPaths);
+        setDragPreview(event, externalDragPaths, label, "add");
+        if (document.body) document.body.classList.add("dragging-media");
+      },
       setItems,
       setOpen,
       writeDraggedPaths,
