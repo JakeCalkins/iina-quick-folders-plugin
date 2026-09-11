@@ -7,7 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Fixed
+- Made every level of deep breadcrumbs reachable through a compact earlier-folders menu and removed layout-timed label mutation
 
 ## [2.4.0] - 2026-09-10
 
