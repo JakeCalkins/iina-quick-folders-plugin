@@ -100,6 +100,7 @@ test("lazy preview requests render a thumbnail and type-specific metadata chips"
     const preview = MediaPreview.create({
       rootElement: new FakeElement("main"),
       sendMessage(type, data) { messages.push({ type, data }); },
+      getPreferences: () => ({ showBitrateChips: true }),
     });
     const thumbnail = new FakeElement("div");
     const info = new FakeElement("div");

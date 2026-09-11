@@ -7,7 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Changed
+- Prevented narrow media rows from clipping metadata chips by hiding lower-priority details first, and made bitrate chips opt-in
 
 ## [2.4.0] - 2026-09-10
 

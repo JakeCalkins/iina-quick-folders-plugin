@@ -82,6 +82,7 @@ let currentPreferences = {
   filterAudio: true,
   videoOnly: false,
   hideWatched: false,
+  showBitrateChips: false,
   maxIndexDepth: 3,
   openWindowShortcut: "cmd+shift+k",
   addFolderShortcut: "n",
@@ -99,6 +100,7 @@ const mediaPreview = QuickFoldersMediaPreview.create({
   sendMessage: QuickFoldersMessaging.send,
   thumbnailCacheLimit: 200,
   metadataCacheLimit: 500,
+  getPreferences: () => currentPreferences,
 });
 const browseModel = QuickFoldersBrowseModel.create({ maxSearchResults: MAX_RENDERED_SEARCH_RESULTS });
 const interactions = QuickFoldersInteractions.create({
