@@ -44,7 +44,7 @@ Open **IINA → Settings → Plugins → Quick Folders → Settings** to change 
 - Lazy native thumbnails, generated fallbacks, and optional local `ffmpeg` previews for non-native media
 - Duration, resolution, codec, bitrate, sample-rate, channel, type, and file-size chips when available
 - Modifier, range, keyboard, and select-all multi-selection behavior
-- Persistent drag-and-drop queue with multi-item reordering and native IINA playlist playback
+- Persistent drag-and-drop queue with bucket and expanded-pane drop targets, multi-item reordering, and native IINA playlist playback
 - Bulk watched/unwatched actions and an optional Watched folder
 - Permanent deletion with confirmation
 - Light/dark appearance and reduced-motion support
