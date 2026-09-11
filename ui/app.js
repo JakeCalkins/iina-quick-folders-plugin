@@ -370,8 +370,8 @@ function showDeleteConfirmation() {
   const items = getSelectedItems();
   if (items.length === 0) return;
   deleteModalMessage.textContent = items.length === 1
-    ? `“${items[0].name}” will be permanently deleted. This cannot be undone.`
-    : `${items.length} files will be permanently deleted. This cannot be undone.`;
+    ? `“${items[0].name}” will be moved to Trash.`
+    : `${items.length} files will be moved to Trash.`;
   deleteDialog.open();
 }
 
@@ -410,12 +410,12 @@ function handleItemActionResult(result) {
   actionPending = false;
   const succeeded = Array.isArray(result.succeeded) ? result.succeeded : [];
   const failed = Array.isArray(result.failed) ? result.failed : [];
-  if (result.action === "deleted") succeeded.forEach((path) => mediaPreview.remove(path));
+  if (result.action === "trashed") succeeded.forEach((path) => mediaPreview.remove(path));
   succeeded.forEach((path) => selectedPaths.delete(path));
   if (selectedPaths.size === 0) selectionAnchorPath = null;
 
-  const verb = result.action === "deleted"
-    ? "deleted"
+  const verb = result.action === "trashed"
+    ? "moved to Trash"
     : result.action === "unwatched" ? "marked unwatched" : "marked watched";
   if (succeeded.length > 0) {
     showToast(`${succeeded.length} file${succeeded.length === 1 ? "" : "s"} ${verb}`);

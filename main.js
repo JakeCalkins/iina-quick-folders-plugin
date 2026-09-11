@@ -654,8 +654,10 @@ function deleteItems(paths) {
       return;
     }
     try {
-      file.delete(path);
-      if (file.exists(path)) throw new Error("The file still exists after deletion");
+      // IINA only permits file.delete for plugin-owned @tmp/@data paths.
+      // User media must go through the filesystem API's recoverable trash path.
+      file.trash(path);
+      if (file.exists(path)) throw new Error("The file still exists after moving it to Trash");
       watchedPaths.delete(path);
       queuePaths = QueueState.removePaths(queuePaths, [path]);
       thumbnailLoader.remove(path);
@@ -675,7 +677,7 @@ function deleteItems(paths) {
   }
   updateWindow();
   standaloneWindow.postMessage("item-action-result", {
-    action: "deleted",
+    action: "trashed",
     succeeded,
     failed,
   });
