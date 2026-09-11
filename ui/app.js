@@ -765,7 +765,12 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
-  if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+  // Toolbar, breadcrumb, and dialog controls own their keyboard events. Letting
+  // those events fall through can open or mutate media behind the focused UI.
+  if (QuickFoldersInteractions.isInteractiveControl(target)) return;
+
+  const hasCommandModifier = event.metaKey || event.ctrlKey || event.altKey;
+  if (!hasCommandModifier && ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
     event.preventDefault();
     moveItemFocus(null, event.key, { extendSelection: event.shiftKey });
     return;
@@ -779,12 +784,12 @@ document.addEventListener("keydown", (event) => {
     refreshSelectionPresentation();
   } else if (event.key === "Escape") {
     clearSelection();
-  } else if (event.key === "Delete" || event.key === "Backspace") {
+  } else if (!hasCommandModifier && (event.key === "Delete" || event.key === "Backspace")) {
     if (selectedPaths.size > 0) {
       event.preventDefault();
       showDeleteConfirmation();
     }
-  } else if (event.key.toLowerCase() === "w" && !event.metaKey && !event.ctrlKey) {
+  } else if (event.key.toLowerCase() === "w" && !hasCommandModifier) {
     if (selectedPaths.size > 0) {
       event.preventDefault();
       setSelectedWatched();
@@ -794,8 +799,8 @@ document.addEventListener("keydown", (event) => {
       event.preventDefault();
       addSelectedToQueue();
     }
-  } else if (event.key === "Enter") {
-    openFocusedOrSelectedItem();
+  } else if (event.key === "Enter" && !hasCommandModifier) {
+    if (openFocusedOrSelectedItem()) event.preventDefault();
   }
 });
 
