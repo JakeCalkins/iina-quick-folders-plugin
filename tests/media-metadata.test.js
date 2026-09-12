@@ -156,13 +156,13 @@ test("builds useful type-specific chip descriptions in a stable order", () => {
     audioSampleRate: 48000,
     audioChannels: 2,
   };
-  assert.deepEqual(metadata.getMetadataChips(source, "video"), [
+  assert.deepEqual(metadata.getMetadataChips(source, "video", { showBitrate: true }), [
     { key: "duration", text: "2:05", title: "Duration" },
     { key: "resolution", text: "1920×1080", title: "Resolution" },
     { key: "codecs", text: "H.264 · AAC", title: "Codecs" },
     { key: "bitrate", text: "8.4 Mbps", title: "Video bitrate" },
   ]);
-  assert.deepEqual(metadata.getMetadataChips(source, "audio"), [
+  assert.deepEqual(metadata.getMetadataChips(source, "audio", { showBitrate: true }), [
     { key: "duration", text: "2:05", title: "Duration" },
     { key: "codecs", text: "H.264 · AAC", title: "Codecs" },
     { key: "bitrate", text: "256 kbps", title: "Audio bitrate" },
@@ -172,4 +172,6 @@ test("builds useful type-specific chip descriptions in a stable order", () => {
   assert.deepEqual(metadata.getMetadataChips(source, "image"), [
     { key: "resolution", text: "1920×1080", title: "Resolution" },
   ]);
+  assert.equal(metadata.getMetadataChips(source, "video").some(({ key }) => key === "bitrate"), false);
+  assert.equal(metadata.getMetadataChips(source, "audio").some(({ key }) => key === "bitrate"), false);
 });

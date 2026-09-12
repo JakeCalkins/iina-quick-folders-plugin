@@ -20,6 +20,7 @@
     "filterAudio": false,
     "videoOnly": false,
     "hideWatched": false,
+    "showBitrateChips": false,
     "maxIndexDepth": 3,
     "openWindowShortcut": "cmd+shift+k",
     "addFolderShortcut": "n"

@@ -548,6 +548,7 @@ function getPreferencesSnapshot() {
     filterAudio: preferences.get("filterAudio") ?? true,
     videoOnly: preferences.get("videoOnly") ?? false,
     hideWatched: preferences.get("hideWatched") ?? false,
+    showBitrateChips: preferences.get("showBitrateChips") ?? false,
     maxIndexDepth: preferences.get("maxIndexDepth") ?? DEFAULT_MAX_INDEX_DEPTH,
     openWindowShortcut: getMenuShortcut("openWindowShortcut", DEFAULT_OPEN_WINDOW_SHORTCUT),
     addFolderShortcut: getMenuShortcut("addFolderShortcut", DEFAULT_ADD_FOLDER_SHORTCUT),

@@ -162,6 +162,7 @@ test("main entry persists watched state and trashes only validated files", async
 
     const initialUpdate = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.equal(initialUpdate.atRoot, true);
+    assert.equal(initialUpdate.preferences.showBitrateChips, false);
     assert.equal(initialUpdate.items.at(-1).isWatchedRoot, true);
     assert.equal(Array.isArray(initialUpdate.indexedFiles), true);
     assert.deepEqual(initialUpdate.queueItems.map((item) => item.path), ["/media/b.mkv"]);
