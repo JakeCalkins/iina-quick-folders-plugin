@@ -51,6 +51,7 @@ class FakeElement {
       key: "",
       metaKey: false,
       ctrlKey: false,
+      altKey: false,
       shiftKey: false,
       target: this,
       currentTarget: this,
@@ -197,10 +198,14 @@ test("focused rows expose listbox state and support Enter, Space, and arrow keys
     const space = row.dispatch("keydown", { key: " " });
     const down = row.dispatch("keydown", { key: "ArrowDown" });
     const shiftUp = row.dispatch("keydown", { key: "ArrowUp", shiftKey: true });
+    const commandDown = row.dispatch("keydown", { key: "ArrowDown", metaKey: true });
+    const optionEnter = row.dispatch("keydown", { key: "Enter", altKey: true });
 
     assert.equal(enter.defaultPrevented && enter.propagationStopped, true);
     assert.equal(space.defaultPrevented && space.propagationStopped, true);
     assert.equal(down.defaultPrevented && down.propagationStopped, true);
+    assert.equal(commandDown.defaultPrevented, false);
+    assert.equal(optionEnter.defaultPrevented, false);
     assert.deepEqual(calls.open, ["/media/Example.mkv"]);
     assert.deepEqual(calls.select, [{
       path: "/media/Example.mkv",
