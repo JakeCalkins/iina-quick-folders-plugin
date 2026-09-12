@@ -75,7 +75,6 @@ let visibleItems = [];
 let renderedItems = [];
 let actionPending = false;
 let toastTimer = null;
-let breadcrumbLayoutTimer = null;
 const MAX_RENDERED_SEARCH_RESULTS = 500;
 let currentPreferences = {
   filterImages: true,
@@ -474,11 +473,46 @@ function resetSearch({ focus = false, render = false } = {}) {
   if (render) renderItems();
 }
 
+function appendBreadcrumbSeparator() {
+  const separator = document.createElement("span");
+  separator.className = "breadcrumb-separator";
+  separator.textContent = "/";
+  breadcrumb.appendChild(separator);
+}
+
 function drawBreadcrumbSegments(segments) {
   breadcrumb.innerHTML = "";
-  const parentElements = [];
-  segments.forEach((segment, index) => {
-    const isCurrent = index === segments.length - 1;
+  const { hidden, visible } = QuickFoldersView.partitionBreadcrumbSegments(segments);
+  if (hidden.length > 0) {
+    const overflow = document.createElement("select");
+    overflow.className = "breadcrumb-overflow";
+    overflow.setAttribute("aria-label", "Earlier folders");
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "…";
+    overflow.appendChild(placeholder);
+    hidden.forEach((segment) => {
+      const option = document.createElement("option");
+      option.value = segment.path;
+      option.textContent = segment.label;
+      overflow.appendChild(option);
+    });
+    const navigate = (event) => {
+      const path = event.currentTarget.value;
+      if (!path) return;
+      // Reset before navigating so WebKit's input/change event pair only
+      // dispatches once and a rejected navigation can still be retried.
+      event.currentTarget.value = "";
+      interactions.navigateTo(path);
+    };
+    overflow.addEventListener("input", navigate);
+    overflow.addEventListener("change", navigate);
+    breadcrumb.appendChild(overflow);
+    appendBreadcrumbSeparator();
+  }
+
+  visible.forEach((segment, index) => {
+    const isCurrent = index === visible.length - 1;
     const element = document.createElement(isCurrent ? "span" : "button");
     element.className = isCurrent ? "breadcrumb-current" : "breadcrumb-parent";
     element.textContent = segment.label;
@@ -492,25 +526,16 @@ function drawBreadcrumbSegments(segments) {
         interactions.navigateTo(segment.path);
       };
       element.addEventListener("click", navigate);
-      parentElements.push(element);
     }
     breadcrumb.appendChild(element);
 
     if (!isCurrent) {
-      const separator = document.createElement("span");
-      separator.className = "breadcrumb-separator";
-      separator.textContent = "/";
-      breadcrumb.appendChild(separator);
+      appendBreadcrumbSeparator();
     }
   });
-  return parentElements;
 }
 
 function renderBreadcrumb() {
-  if (breadcrumbLayoutTimer) {
-    clearTimeout(breadcrumbLayoutTimer);
-    breadcrumbLayoutTimer = null;
-  }
   breadcrumb.innerHTML = "";
   breadcrumb.title = "";
   breadcrumb.classList.toggle("breadcrumb-root", currentState.atRoot || currentState.viewingWatched);
@@ -530,17 +555,7 @@ function renderBreadcrumb() {
     currentState.currentRootPath,
   );
   breadcrumb.title = currentState.currentPath;
-  const parentElements = drawBreadcrumbSegments(segments);
-
-  // Layout is available on the next task. Mutate labels in place rather than
-  // replacing the nodes: replacing a breadcrumb between pointer-down and
-  // pointer-up causes WebKit to discard the click.
-  breadcrumbLayoutTimer = setTimeout(() => {
-    breadcrumbLayoutTimer = null;
-    for (let index = 0; index < segments.length - 1 && breadcrumb.scrollWidth > breadcrumb.clientWidth; index++) {
-      parentElements[index].textContent = "..";
-    }
-  }, 0);
+  drawBreadcrumbSegments(segments);
 }
 
 function appendEmptyMessage(message) {
