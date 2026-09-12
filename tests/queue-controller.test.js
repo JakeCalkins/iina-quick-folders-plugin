@@ -156,7 +156,7 @@ test("queue drag payload parsing falls back safely", () => {
   }
 });
 
-test("queue editor multi-selects, multi-drags, reorders, and accepts bucket drops", () => {
+test("queue editor multi-selects, reorders, and accepts bucket and pane drops", () => {
   const document = installControllerDom();
   try {
     const elements = {
@@ -238,6 +238,22 @@ test("queue editor multi-selects, multi-drags, reorders, and accepts bucket drop
     });
     assert.equal(document.body.classList.contains("dragging-media"), false);
     assert.equal(document.body.querySelector(".drag-preview"), null);
+
+    const paneTransfer = createTransfer();
+    controller.startExternalDrag(
+      { dataTransfer: paneTransfer }, ["/media/a.mp4", "/media/c.mov"], "2 clips",
+    );
+    elements.panel.dispatch("dragenter", { dataTransfer: paneTransfer, target: rows[2] });
+    assert.equal(elements.panel.classList.contains("drop-ready"), true);
+    elements.panel.dispatch("dragover", { dataTransfer: paneTransfer, target: rows[2] });
+    assert.equal(paneTransfer.dropEffect, "copy");
+    elements.panel.dispatch("drop", { dataTransfer: paneTransfer, target: rows[2] });
+    assert.deepEqual(messages.at(-1), {
+      type: "queue-add",
+      data: { paths: ["/media/a.mp4", "/media/c.mov"] },
+    });
+    assert.equal(elements.panel.classList.contains("drop-ready"), false);
+    assert.equal(document.body.classList.contains("dragging-media"), false);
   } finally {
     uninstallControllerDom();
   }

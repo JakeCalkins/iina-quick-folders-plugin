@@ -63,6 +63,7 @@ const QuickFoldersQueueController = (() => {
     let externalDragPaths = [];
     let queueDragPaths = [];
     let dragDepth = 0;
+    let panelDragDepth = 0;
     let dragPreview = null;
     let dropMarkerRow = null;
 
@@ -95,7 +96,9 @@ const QuickFoldersQueueController = (() => {
 
     function clearDragChrome() {
       dragDepth = 0;
+      panelDragDepth = 0;
       toggleButton.classList.remove("drag-active");
+      panel.classList.remove("drop-ready");
       list.classList.remove("reordering");
       if (document.body) document.body.classList.remove("dragging-media", "dragging-queue");
       clearDropMarkers();
@@ -333,7 +336,7 @@ const QuickFoldersQueueController = (() => {
         const title = document.createElement("strong");
         title.textContent = "Build your queue";
         const detail = document.createElement("span");
-        detail.textContent = "Drag media onto the queue button below.";
+        detail.textContent = "Drag media here or onto the queue button.";
         empty.appendChild(icon);
         empty.appendChild(title);
         empty.appendChild(detail);
@@ -386,6 +389,31 @@ const QuickFoldersQueueController = (() => {
     toggleButton.addEventListener("drop", (event) => {
       event.preventDefault();
       dragDepth = 0;
+      const paths = readDraggedPaths(event, externalDragPaths);
+      externalDragPaths = [];
+      clearDragChrome();
+      if (paths.length > 0) sendMessage("queue-add", { paths });
+    });
+    panel.addEventListener("dragenter", (event) => {
+      if (externalDragPaths.length === 0) return;
+      event.preventDefault();
+      panelDragDepth++;
+      panel.classList.add("drop-ready");
+    });
+    panel.addEventListener("dragover", (event) => {
+      if (externalDragPaths.length === 0) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    });
+    panel.addEventListener("dragleave", () => {
+      if (externalDragPaths.length === 0) return;
+      panelDragDepth = Math.max(0, panelDragDepth - 1);
+      if (panelDragDepth === 0) panel.classList.remove("drop-ready");
+    });
+    panel.addEventListener("drop", (event) => {
+      if (externalDragPaths.length === 0) return;
+      event.preventDefault();
+      event.stopPropagation();
       const paths = readDraggedPaths(event, externalDragPaths);
       externalDragPaths = [];
       clearDragChrome();

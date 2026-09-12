@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Made the expanded queue pane a clear drop target for single and multi-item media drags
+
 ### Changed
 - Prevented narrow media rows from clipping metadata chips by hiding lower-priority details first, and made bitrate chips opt-in
 
