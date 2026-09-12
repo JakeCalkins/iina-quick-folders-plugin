@@ -25,6 +25,23 @@ test("builds breadcrumb labels with stable navigation paths", () => {
     { label: "api", path: "/Users/example/Desktop/intake/docs/reference/api" },
   ]);
   assert.equal(view.truncateMiddle("abcdefghijklmnopqrstuvwxyz1234567890").length <= 30, true);
+
+  const deep = view.getBreadcrumbSegments("/media/library/series/season/episode", "/media");
+  assert.deepEqual(view.partitionBreadcrumbSegments(deep), {
+    hidden: [
+      { label: "media", path: "/media" },
+      { label: "library", path: "/media/library" },
+      { label: "series", path: "/media/library/series" },
+    ],
+    visible: [
+      { label: "season", path: "/media/library/series/season" },
+      { label: "episode", path: "/media/library/series/season/episode" },
+    ],
+  });
+  assert.deepEqual(view.partitionBreadcrumbSegments(deep.slice(0, 3)), {
+    hidden: [],
+    visible: deep.slice(0, 3),
+  });
 });
 
 test("chooses empty-state copy from the active view constraint", () => {

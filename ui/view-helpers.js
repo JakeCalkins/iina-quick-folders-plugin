@@ -68,6 +68,15 @@ const QuickFoldersView = (() => {
     }));
   }
 
+  function partitionBreadcrumbSegments(segments) {
+    const entries = Array.isArray(segments) ? segments : [];
+    if (entries.length <= 3) return { hidden: [], visible: entries.slice() };
+    return {
+      hidden: entries.slice(0, -2),
+      visible: entries.slice(-2),
+    };
+  }
+
   function getEmptyMessage({ state, query, filter, preferences }) {
     const currentState = state || {};
     if (!Array.isArray(currentState.items) || currentState.items.length === 0) {
@@ -88,6 +97,7 @@ const QuickFoldersView = (() => {
     getEmptyMessage,
     getExtensionClass,
     getFileIcon,
+    partitionBreadcrumbSegments,
     stripUserHome,
     truncateMiddle,
   };

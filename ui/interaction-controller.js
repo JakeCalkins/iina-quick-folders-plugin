@@ -2,6 +2,27 @@
 // commands pure makes navigation and native-select regressions testable without
 // an IINA runtime or browser dependency.
 const QuickFoldersInteractions = (() => {
+  const INTERACTIVE_SELECTOR = [
+    "button",
+    "a",
+    "input",
+    "select",
+    "textarea",
+    "[contenteditable='true']",
+    "[role='button']",
+    "[role='link']",
+  ].join(", ");
+
+  function isInteractiveControl(target) {
+    if (!target) return false;
+    if (target.isContentEditable) return true;
+    if (typeof target.closest === "function") {
+      return Boolean(target.closest(INTERACTIVE_SELECTOR));
+    }
+    const tagName = String(target.tagName || "").toLowerCase();
+    return ["button", "a", "input", "select", "textarea"].includes(tagName);
+  }
+
   function getNavigationTarget(items, currentPath, key) {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(key)) return null;
     const candidates = Array.isArray(items)
@@ -54,7 +75,7 @@ const QuickFoldersInteractions = (() => {
     return { applyFilter, goBack, navigateTo, openFolder };
   }
 
-  return { create, getNavigationTarget };
+  return { create, getNavigationTarget, isInteractiveControl };
 })();
 
 if (typeof module !== "undefined") {
