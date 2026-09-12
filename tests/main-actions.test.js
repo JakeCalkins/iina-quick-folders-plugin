@@ -1,9 +1,9 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-test("main entry persists watched state and permanently deletes only validated files", async () => {
+test("main entry persists watched state and trashes only validated files", async () => {
   const statePath = "@data/quick-folders-state.json";
-  const existing = new Set(["/media/a.mp4", "/media/b.mkv", "/media/failure.mov"]);
+  const existing = new Set(["/media/a.mp4", "/media/b.mkv", "/media/failure.mov", "/media/stuck.mp4"]);
   let persistedState = JSON.stringify({
     folderRoots: [{ path: "/media", name: "media" }],
     fileIndex: {
@@ -23,7 +23,7 @@ test("main entry persists watched state and permanently deletes only validated f
   const globalMessages = [];
   const menuCallbacks = new Map();
   const messages = [];
-  const deletedPaths = [];
+  const trashedPaths = [];
   const openedPaths = [];
   const executedTools = [];
   const menuItems = new Map();
@@ -51,15 +51,17 @@ test("main entry persists watched state and permanently deletes only validated f
         { filename: "a.mp4", path: "/media/a.mp4", isDir: false },
         { filename: "b.mkv", path: "/media/b.mkv", isDir: false },
         { filename: "failure.mov", path: "/media/failure.mov", isDir: false },
+        { filename: "stuck.mp4", path: "/media/stuck.mp4", isDir: false },
         { filename: "folder.mp4", path: "/media/folder.mp4", isDir: true },
       ];
     },
     stat() {
       return { size: 1024 };
     },
-    delete(path) {
-      deletedPaths.push(path);
+    trash(path) {
+      trashedPaths.push(path);
       if (path === "/media/failure.mov") throw new Error("Read only");
+      if (path === "/media/stuck.mp4") return;
       existing.delete(path);
     },
   };
@@ -276,12 +278,14 @@ test("main entry persists watched state and permanently deletes only validated f
     assert.deepEqual(executedTools, ["/usr/bin/mdls", "/opt/homebrew/bin/ffprobe"]);
 
     handlers.get("delete-items")({
-      paths: ["/media/a.mp4", "/outside/b.mkv", "/media/failure.mov"],
+      paths: ["/media/a.mp4", "/outside/b.mkv", "/media/failure.mov", "/media/stuck.mp4"],
     });
     const deleteResult = messages.filter((message) => message.type === "item-action-result").at(-1).data;
+    assert.equal(deleteResult.action, "trashed");
     assert.deepEqual(deleteResult.succeeded, ["/media/a.mp4"]);
-    assert.deepEqual(deletedPaths, ["/media/a.mp4", "/media/failure.mov"]);
-    assert.equal(deleteResult.failed.length, 2);
+    assert.deepEqual(trashedPaths, ["/media/a.mp4", "/media/failure.mov", "/media/stuck.mp4"]);
+    assert.equal(deleteResult.failed.length, 3);
+    assert.match(deleteResult.failed.at(-1).reason, /still exists/);
     assert.equal(existing.has("/media/a.mp4"), false);
     assert.equal(existing.has("/media/failure.mov"), true);
 
@@ -291,6 +295,7 @@ test("main entry persists watched state and permanently deletes only validated f
     assert.deepEqual(finalState.fileIndex.files.map((item) => item.path), [
       "/media/b.mkv",
       "/media/failure.mov",
+      "/media/stuck.mp4",
     ]);
   } finally {
     global.setTimeout = realSetTimeout;

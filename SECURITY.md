@@ -20,4 +20,4 @@ Remove unrelated private media filenames and filesystem paths. The maintainer wi
 
 ## Scope
 
-Quick Folders requests IINA's filesystem permission so it can browse and permanently delete files explicitly selected through its UI. It does not request network access. Reports about escaping configured folder roots, unintended deletion, unsafe path handling, or release-package integrity are especially important.
+Quick Folders requests IINA's filesystem permission so it can browse media and move files explicitly selected through its UI to Trash. It does not request network access. Reports about escaping configured folder roots, unintended file removal, unsafe path handling, or release-package integrity are especially important.

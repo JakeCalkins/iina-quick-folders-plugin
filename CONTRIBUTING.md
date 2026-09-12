@@ -85,7 +85,7 @@ Choose the relevant scenarios for your change:
 - Verify plain-click playback plus modifier, range, Space-key, and select-all selection behavior
 - Mark watched/unwatched items and exercise the Watched view
 - Open media and verify thumbnail and metadata loading
-- Confirm delete behavior with both success and failure cases
+- Confirm moving files to Trash with both success and failure cases
 - Test keyboard shortcuts, dialogs, focus restoration, and reduced motion
 - Confirm selection does not restart loaded thumbnails or metadata, and an unchanged queue update does not disturb focus or selection
 - Confirm the browser console and IINA logs contain no new errors
