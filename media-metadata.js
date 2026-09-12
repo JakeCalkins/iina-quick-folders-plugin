@@ -232,7 +232,7 @@ const QuickFoldersMediaMetadata = (() => {
     return `${visible.join(" · ")}${remaining > 0 ? ` +${remaining}` : ""}`;
   }
 
-  function getMetadataChips(value, fileType) {
+  function getMetadataChips(value, fileType, options = {}) {
     const metadata = normalizeMetadata(value);
     const chips = [];
     const add = (key, text, title) => {
@@ -246,11 +246,11 @@ const QuickFoldersMediaMetadata = (() => {
     if (fileType !== "image") add("codecs", formatCodecs(metadata.codecs), "Codecs");
 
     if (fileType === "audio") {
-      add("bitrate", formatBitRate(metadata.audioBitRate), "Audio bitrate");
+      if (options.showBitrate) add("bitrate", formatBitRate(metadata.audioBitRate), "Audio bitrate");
       add("sample-rate", formatSampleRate(metadata.audioSampleRate), "Sample rate");
       add("channels", formatChannelCount(metadata.audioChannels), "Audio channels");
     } else if (fileType === "video") {
-      add("bitrate", formatBitRate(metadata.videoBitRate), "Video bitrate");
+      if (options.showBitrate) add("bitrate", formatBitRate(metadata.videoBitRate), "Video bitrate");
     }
     return chips;
   }

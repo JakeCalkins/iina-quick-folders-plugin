@@ -1373,6 +1373,7 @@ body {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  container: media-row / inline-size;
 }
 
 .title {
@@ -1455,6 +1456,26 @@ body {
 
 .dynamic-metadata-chip {
   animation: metadataChipIn 180ms cubic-bezier(0.2, 0.85, 0.2, 1.1);
+}
+
+/* Keep complete, high-value chips visible instead of clipping the tail of a
+   lower-priority label as the media column narrows. */
+@container media-row (max-width: 410px) {
+  .size-chip { display: none; }
+}
+
+@container media-row (max-width: 350px) {
+  .bitrate-chip,
+  .sample-rate-chip,
+  .channels-chip { display: none; }
+}
+
+@container media-row (max-width: 290px) {
+  .codecs-chip { display: none; }
+}
+
+@container media-row (max-width: 250px) {
+  .resolution-chip { display: none; }
 }
 
 @keyframes metadataChipIn {
