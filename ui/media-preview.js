@@ -14,6 +14,7 @@ const QuickFoldersMediaPreview = (() => {
     const metadataElements = new Map();
     const thumbnailCacheLimit = options.thumbnailCacheLimit || DEFAULT_THUMBNAIL_CACHE_LIMIT;
     const metadataCacheLimit = options.metadataCacheLimit || DEFAULT_METADATA_CACHE_LIMIT;
+    const getPreferences = options.getPreferences || (() => ({}));
 
     const observer = typeof IntersectionObserver === "undefined"
       ? null
@@ -97,7 +98,9 @@ const QuickFoldersMediaPreview = (() => {
       if (!metadata) return;
 
       const fileType = QuickFoldersFileTypes.getFileTypeByExt(path);
-      const chips = QuickFoldersMediaMetadata.getMetadataChips(metadata, fileType);
+      const chips = QuickFoldersMediaMetadata.getMetadataChips(metadata, fileType, {
+        showBitrate: Boolean(getPreferences().showBitrateChips),
+      });
       const insertionPoint = element.querySelector(".watched-tag, .size-chip, .path-metadata");
       chips.forEach(({ key, text, title }) => {
         const chip = document.createElement("span");

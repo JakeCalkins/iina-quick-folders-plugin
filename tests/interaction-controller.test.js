@@ -90,3 +90,22 @@ test("keyboard navigation establishes focus and stays inside list bounds", () =>
   assert.equal(Interactions.getNavigationTarget(items, "/media/a.mp4", "PageDown"), null);
   assert.equal(Interactions.getNavigationTarget(items, null, "PageDown"), null);
 });
+
+test("global list shortcuts ignore native and custom interactive controls", () => {
+  assert.equal(Interactions.isInteractiveControl(null), false);
+  assert.equal(Interactions.isInteractiveControl({ tagName: "DIV" }), false);
+  assert.equal(Interactions.isInteractiveControl({ tagName: "BUTTON" }), true);
+  assert.equal(Interactions.isInteractiveControl({ tagName: "INPUT" }), true);
+  assert.equal(Interactions.isInteractiveControl({ isContentEditable: true }), true);
+  assert.equal(Interactions.isInteractiveControl({
+    tagName: "svg",
+    closest(selector) {
+      assert.match(selector, /button/);
+      return { tagName: "BUTTON" };
+    },
+  }), true);
+  assert.equal(Interactions.isInteractiveControl({
+    tagName: "DIV",
+    closest() { return null; },
+  }), false);
+});

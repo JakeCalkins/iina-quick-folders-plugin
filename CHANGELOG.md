@@ -10,6 +10,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Made the expanded queue pane a clear drop target for single and multi-item media drags
 
+### Changed
+- Prevented narrow media rows from clipping metadata chips by hiding lower-priority details first, and made bitrate chips opt-in
+
+### Fixed
+- Made every level of deep breadcrumbs reachable through a compact earlier-folders menu and removed layout-timed label mutation
+- Kept file-list keyboard commands from firing through focused buttons, breadcrumbs, form fields, or modified system shortcuts
+
 ## [2.4.0] - 2026-09-10
 
 ### Added

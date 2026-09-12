@@ -157,7 +157,8 @@ const QuickFoldersItemView = (() => {
       });
     }
     row.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
+      const hasCommandModifier = event.metaKey || event.ctrlKey || event.altKey;
+      if (event.key === "Enter" && !hasCommandModifier) {
         event.preventDefault();
         event.stopPropagation();
         if (item.isDir) options.onOpenFolder(item);
@@ -166,7 +167,7 @@ const QuickFoldersItemView = (() => {
         event.preventDefault();
         event.stopPropagation();
         options.onSelectFile(item, event, { additive: true, restoreFocus: true });
-      } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      } else if (!hasCommandModifier && ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         event.preventDefault();
         event.stopPropagation();
         options.onMoveFocus(item, event.key, { extendSelection: event.shiftKey });
