@@ -46,7 +46,7 @@ Open **IINA → Settings → Plugins → Quick Folders → Settings** to change 
 - Modifier, range, keyboard, and select-all multi-selection behavior
 - Persistent drag-and-drop queue with bucket and expanded-pane drop targets, multi-item reordering, and native IINA playlist playback
 - Bulk watched/unwatched actions and an optional Watched folder
-- Permanent deletion with confirmation
+- Move selected files to Trash with confirmation
 - Light/dark appearance and reduced-motion support
 - Built-in keyboard shortcut reference with `?`
 
@@ -64,7 +64,7 @@ Open **IINA → Settings → Plugins → Quick Folders → Settings** to change 
 | `⌘/Ctrl A` | Select all visible files |
 | `Q` | Add selected files to the queue |
 | `W` | Mark selected files watched or unwatched |
-| `Delete` or `Backspace` | Delete selected files after confirmation |
+| `Delete` or `Backspace` | Move selected files to Trash after confirmation |
 | `Escape` | Clear selection or close a dialog |
 | `?` | Show keyboard shortcut help |
 
@@ -100,7 +100,7 @@ Release history and pending changes are maintained in [CHANGELOG.md](CHANGELOG.m
 - Use the repository’s structured [issue forms](https://github.com/JakeCalkins/iina-quick-folders-plugin/issues/new/choose) for bugs and features.
 - Report security-sensitive problems according to [SECURITY.md](SECURITY.md), not in a public issue.
 
-Quick Folders works with local paths you choose and requires IINA’s filesystem permission. It does not request network access or persist diagnostic logs containing media paths. Deletion actions are permanent and always require confirmation.
+Quick Folders works with local paths you choose and requires IINA’s filesystem permission. It does not request network access or persist diagnostic logs containing media paths. File-removal actions move items to Trash and always require confirmation.
 
 ## License
 
