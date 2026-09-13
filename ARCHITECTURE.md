@@ -27,6 +27,8 @@ Index builds use a local result and publish it atomically when complete. Concurr
 - `ui/media-preview.js` owns lazy loading, bounded caches, and direct path-to-element lookup for media responses.
 - `ui/dialog-controller.js` provides modal focus management and keyboard containment.
 - `ui/queue-controller.js` owns queue-panel rendering, selection, keyboard access, and browser drag/drop behavior.
+- `ui/responsive-layout.js` owns the wide-window breakpoint and automatic queue visibility.
+- `ui/column-view.js` renders lightweight ancestor columns while the active folder stays in the full item view.
 - `ui/view-helpers.js`, `ui/search.js`, and `ui/keyboard-shortcuts.js` contain testable presentation and input logic.
 
 Scripts in `ui/index.html` are ordered by dependency. Keep shared/pure modules before DOM controllers and load `app.js` last.

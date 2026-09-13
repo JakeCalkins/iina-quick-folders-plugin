@@ -22,6 +22,17 @@ test("accepts only paths contained by configured roots", () => {
   assert.equal(browseState.isPathWithinRoots("/media/library/movie.mp4", [{ path: "/media/../library" }]), false);
 });
 
+test("builds bounded ancestor locations for Finder-style columns", () => {
+  assert.deepEqual(
+    browseState.getAncestorLocations("/media/shows/season-1", "/media"),
+    ["/media", "/media/shows"],
+  );
+  assert.deepEqual(browseState.getAncestorLocations("/media", "/media"), []);
+  assert.deepEqual(browseState.getAncestorLocations("/media-copy/show", "/media"), []);
+  assert.deepEqual(browseState.getAncestorLocations("/media/../private", "/media"), []);
+  assert.deepEqual(browseState.getAncestorLocations("/media/shows", "/"), ["/", "/media"]);
+});
+
 test("partitions watched files after active files and directories", () => {
   const folder = { path: "/media/folder", isDir: true };
   const active = { path: "/media/a.mp4", isDir: false, watched: false };

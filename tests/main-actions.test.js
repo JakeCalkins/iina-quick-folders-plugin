@@ -162,6 +162,7 @@ test("main entry persists watched state and trashes only validated files", async
 
     const initialUpdate = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.equal(initialUpdate.atRoot, true);
+    assert.deepEqual(initialUpdate.navigationColumns, []);
     assert.equal(initialUpdate.preferences.showBitrateChips, false);
     assert.equal(initialUpdate.items.at(-1).isWatchedRoot, true);
     assert.equal(Array.isArray(initialUpdate.indexedFiles), true);
@@ -205,6 +206,7 @@ test("main entry persists watched state and trashes only validated files", async
     assert.deepEqual(JSON.parse(persistedState).queuePaths, ["/media/a.mp4"]);
     handlers.get("queue-panel-open")({ open: true });
     handlers.get("queue-panel-open")({ open: false });
+    handlers.get("queue-panel-open")({ open: true, resize: false });
     assert.deepEqual(windowFrames.slice(-2), [[840, 600, null, null], [500, 600, null, null]]);
 
     handlers.get("set-watched")({
@@ -232,6 +234,8 @@ test("main entry persists watched state and trashes only validated files", async
     const openedRoot = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.equal(openedRoot.currentPath, "/media");
     assert.equal(openedRoot.currentRootPath, "/media");
+    assert.equal(openedRoot.navigationColumns.length, 1);
+    assert.equal(openedRoot.navigationColumns[0].selectedPath, "/media");
     handlers.get("go-back")();
 
     const listCallsBeforeRefresh = mediaListCalls;

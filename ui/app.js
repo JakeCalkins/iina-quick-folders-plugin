@@ -19,6 +19,7 @@ function registerBackendMessages() {
 }
 
 const itemListEl = document.getElementById("item-list");
+const columnBrowser = document.getElementById("column-browser");
 const backBtn = document.getElementById("back-btn");
 const breadcrumb = document.getElementById("breadcrumb");
 const addFolderBtn = document.getElementById("add-folder-btn");
@@ -120,6 +121,7 @@ const interactions = QuickFoldersInteractions.create({
     renderItems();
   },
 });
+let responsiveLayout = null;
 const queueController = QuickFoldersQueueController.create({
   panel: queuePanel,
   toggleButton: queueBucket,
@@ -132,7 +134,30 @@ const queueController = QuickFoldersQueueController.create({
   playButton: queuePlayBtn,
   sendMessage: QuickFoldersMessaging.send,
   onOpenChange(open) {
-    QuickFoldersMessaging.send("queue-panel-open", { open });
+    if (responsiveLayout) responsiveLayout.noteManualQueueChange();
+    QuickFoldersMessaging.send("queue-panel-open", {
+      open,
+      resize: !responsiveLayout || !responsiveLayout.isWide(),
+    });
+  },
+});
+const columnView = QuickFoldersColumnView.create({
+  element: columnBrowser,
+  scrollContainer: columnBrowser.parentElement,
+  schedule: requestAnimationFrame,
+  onOpenFolder(folder) {
+    interactions.openFolder(folder);
+  },
+  onOpenFile(file) {
+    QuickFoldersMessaging.send("open-item", { path: file.path, isDir: false });
+  },
+});
+responsiveLayout = QuickFoldersResponsiveLayout.create({
+  windowObject: window,
+  shell: appShell,
+  queueController,
+  onWideChange(wide) {
+    if (wide) columnView.revealActive();
   },
 });
 const deleteDialog = QuickFoldersDialogs.create({
@@ -629,6 +654,7 @@ function renderItems() {
   }
 
   renderBreadcrumb();
+  columnView.render(currentState.navigationColumns);
 
   if (filteredItems.length === 0) {
     renderedItems = [];
