@@ -34,20 +34,31 @@ const QuickFoldersMediaPreview = (() => {
 
     function showThumbnail(element, dataUrl) {
       if (!element || !dataUrl) return;
-      const previousImage = element.querySelector(".thumbnail-image");
-      if (previousImage) previousImage.remove();
+      const previousPending = element.querySelector(".thumbnail-image-pending");
+      if (previousPending) previousPending.remove();
       const image = document.createElement("img");
-      image.className = "thumbnail-image";
+      image.className = "thumbnail-image-pending";
       image.alt = "";
       image.draggable = false;
+      element.quickFoldersPendingThumbnail = image;
+      element.appendChild(image);
+      image.addEventListener("load", () => {
+        if (element.quickFoldersPendingThumbnail !== image) return;
+        const previousImage = element.querySelector(".thumbnail-image");
+        if (previousImage && previousImage !== image) previousImage.remove();
+        image.className = "thumbnail-image";
+        element.quickFoldersPendingThumbnail = null;
+        element.classList.add("has-thumbnail");
+      }, { once: true });
       image.addEventListener("error", () => {
+        if (element.quickFoldersPendingThumbnail === image) element.quickFoldersPendingThumbnail = null;
         image.remove();
-        element.classList.remove("has-thumbnail");
+        if (!element.querySelector(".thumbnail-image")) element.classList.remove("has-thumbnail");
       }, { once: true });
       // Keep the generated file-type icon underneath the image. It remains a
       // useful fallback while decoding and if WebKit rejects a damaged image.
-      element.appendChild(image);
-      element.classList.add("has-thumbnail");
+      // The currently displayed image is replaced only after the new image has
+      // decoded, avoiding a blank frame when a generated preview is upgraded.
       image.src = dataUrl;
     }
 
@@ -101,7 +112,7 @@ const QuickFoldersMediaPreview = (() => {
       const chips = QuickFoldersMediaMetadata.getMetadataChips(metadata, fileType, {
         showBitrate: Boolean(getPreferences().showBitrateChips),
       });
-      const insertionPoint = element.querySelector(".watched-tag, .size-chip, .path-metadata");
+      const insertionPoint = element.querySelector(".playback-state-tag, .size-chip, .path-metadata");
       chips.forEach(({ key, text, title }) => {
         const chip = document.createElement("span");
         chip.className = `metadata-chip dynamic-metadata-chip ${key}-chip`;
@@ -112,13 +123,15 @@ const QuickFoldersMediaPreview = (() => {
       });
     }
 
-    function beginRender() {
+    function beginRender({ preservePending = false } = {}) {
       if (observer) observer.disconnect();
       // A hidden or replaced IINA WebView can lose an in-flight reply. Allow
       // the new render to ask again; the backend loader still deduplicates and
       // serves completed work from its bounded cache.
-      pendingThumbnails.clear();
-      pendingMetadata.clear();
+      if (!preservePending) {
+        pendingThumbnails.clear();
+        pendingMetadata.clear();
+      }
       thumbnailElements.clear();
       metadataElements.clear();
     }
@@ -172,9 +185,20 @@ const QuickFoldersMediaPreview = (() => {
       metadataElements.delete(path);
     }
 
+    function clear() {
+      if (observer) observer.disconnect();
+      thumbnailCache.clear();
+      metadataCache.clear();
+      pendingThumbnails.clear();
+      pendingMetadata.clear();
+      thumbnailElements.clear();
+      metadataElements.clear();
+    }
+
     return {
       attachMetadata,
       beginRender,
+      clear,
       handleMetadataReady,
       handleThumbnailReady,
       loadThumbnail,

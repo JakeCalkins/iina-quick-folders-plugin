@@ -36,7 +36,7 @@ gh attestation verify quick-folders-v*.iinaplgz --repo JakeCalkins/iina-quick-fo
 
 For GitHub-installed copies, use the update control in **IINA → Settings → Plugins** when an update is available. If an update fails, remove Quick Folders from that screen, restart IINA, and install it again from the repository URL.
 
-Quick Folders stores its folder list and watched state in its IINA plugin data directory. Reinstalling the plugin may remove that state depending on how IINA performs the removal, so note important folder choices first.
+Quick Folders stores its folder list, queue, cached index, playback progress, watched overrides, and browser context in its IINA plugin data directory. Reinstalling the plugin may remove that state depending on how IINA performs the removal, so note important folder choices first.
 
 ## Uninstall
 

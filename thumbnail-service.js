@@ -305,10 +305,14 @@ function createThumbnailService(options) {
     load(path) {
       return options.isValid(path) ? generator.generate(path) : null;
     },
+    onCacheHit: options.onCacheHit,
+    onCacheMiss: options.onCacheMiss,
     deliver: options.deliver,
   });
 
   return {
+    clear: loader.clear,
+    getStats: loader.getStats,
     remove: loader.remove,
     request: loader.request,
   };

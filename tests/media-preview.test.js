@@ -24,6 +24,7 @@ class FakeElement {
   }
 
   appendChild(child) {
+    child.parentElement = this;
     this.children.push(child);
     return child;
   }
@@ -35,7 +36,7 @@ class FakeElement {
   set src(value) {
     this._src = value;
     const onLoad = this.listeners.get("load");
-    if (onLoad) onLoad();
+    if (FakeElement.autoLoad && onLoad) onLoad();
   }
 
   get src() {
@@ -44,6 +45,15 @@ class FakeElement {
 
   remove() {
     this.removed = true;
+    if (this.parentElement) {
+      this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
+      this.parentElement = null;
+    }
+  }
+
+  dispatch(type) {
+    const callback = this.listeners.get(type);
+    if (callback) callback();
   }
 
   insertBefore(child, reference) {
@@ -74,6 +84,8 @@ class FakeElement {
   }
 }
 
+FakeElement.autoLoad = true;
+
 function installBrowserGlobals() {
   global.document = { createElement: (tagName) => new FakeElement(tagName) };
   global.QuickFoldersView = {
@@ -89,6 +101,7 @@ function removeBrowserGlobals() {
   delete global.QuickFoldersView;
   delete global.QuickFoldersFileTypes;
   delete global.QuickFoldersMediaMetadata;
+  FakeElement.autoLoad = true;
 }
 
 test("lazy preview requests render a thumbnail and type-specific metadata chips", () => {
@@ -201,6 +214,90 @@ test("visibility sampling resumes lazy requests when WebKit does not wake its ob
     ]);
   } finally {
     delete global.IntersectionObserver;
+    removeBrowserGlobals();
+  }
+});
+
+test("keeps the displayed thumbnail until its replacement finishes loading", () => {
+  installBrowserGlobals();
+  try {
+    delete require.cache[require.resolve("../ui/media-preview.js")];
+    const MediaPreview = require("../ui/media-preview.js");
+    const preview = MediaPreview.create({
+      rootElement: new FakeElement("main"),
+      sendMessage() {},
+    });
+    const thumbnail = new FakeElement("div");
+    preview.loadThumbnail(thumbnail, "/media/example.mkv", false);
+    preview.handleThumbnailReady({
+      path: "/media/example.mkv",
+      dataUrl: "data:image/png;base64,b2xk",
+    });
+    const displayed = thumbnail.querySelector(".thumbnail-image");
+
+    FakeElement.autoLoad = false;
+    preview.handleThumbnailReady({
+      path: "/media/example.mkv",
+      dataUrl: "data:image/png;base64,bmV3",
+    });
+    const pending = thumbnail.querySelector(".thumbnail-image-pending");
+    assert.equal(displayed.removed, undefined);
+    assert.equal(thumbnail.querySelector(".thumbnail-image"), displayed);
+    assert.equal(thumbnail.classList.contains("has-thumbnail"), true);
+
+    pending.dispatch("load");
+    assert.equal(displayed.removed, true);
+    assert.equal(thumbnail.querySelector(".thumbnail-image"), pending);
+    assert.equal(pending.src, "data:image/png;base64,bmV3");
+  } finally {
+    removeBrowserGlobals();
+  }
+});
+
+test("preserves pending lazy work when only the item layout changes", () => {
+  installBrowserGlobals();
+  try {
+    delete require.cache[require.resolve("../ui/media-preview.js")];
+    const MediaPreview = require("../ui/media-preview.js");
+    const messages = [];
+    const preview = MediaPreview.create({
+      rootElement: new FakeElement("main"),
+      sendMessage(type, data) { messages.push({ type, data }); },
+    });
+    preview.loadThumbnail(new FakeElement("div"), "/media/example.mkv", false);
+    assert.equal(messages.length, 2);
+
+    preview.beginRender({ preservePending: true });
+    const replacement = new FakeElement("div");
+    preview.loadThumbnail(replacement, "/media/example.mkv", false);
+    assert.equal(messages.length, 2, "a layout-only render should not duplicate backend work");
+
+    preview.handleThumbnailReady({
+      path: "/media/example.mkv",
+      dataUrl: "data:image/png;base64,aW1hZ2U=",
+    });
+    assert.equal(replacement.classList.contains("has-thumbnail"), true);
+  } finally {
+    removeBrowserGlobals();
+  }
+});
+
+test("clearing previews drops cached and pending work so visible items can reload", () => {
+  installBrowserGlobals();
+  try {
+    delete require.cache[require.resolve("../ui/media-preview.js")];
+    const MediaPreview = require("../ui/media-preview.js");
+    const messages = [];
+    const preview = MediaPreview.create({
+      rootElement: new FakeElement("main"),
+      sendMessage(type, data) { messages.push({ type, data }); },
+    });
+    preview.loadThumbnail(new FakeElement("div"), "/media/example.mkv", false);
+    assert.equal(messages.length, 2);
+    preview.clear();
+    preview.loadThumbnail(new FakeElement("div"), "/media/example.mkv", false);
+    assert.equal(messages.length, 4);
+  } finally {
     removeBrowserGlobals();
   }
 });

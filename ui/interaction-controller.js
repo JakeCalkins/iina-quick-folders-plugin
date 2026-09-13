@@ -57,16 +57,21 @@ const QuickFoldersInteractions = (() => {
     function openFolder(folder) {
       if (!folder || typeof folder.path !== "string" || folder.path.length === 0) return false;
       resetBrowseContext();
-      sendMessage("open-item", {
+      const data = {
         path: folder.path,
         isDir: true,
         isWatchedRoot: Boolean(folder.isWatchedRoot),
-      });
+      };
+      if (folder.isSmartView && typeof folder.smartView === "string") {
+        data.isSmartView = true;
+        data.smartView = folder.smartView;
+      }
+      sendMessage("open-item", data);
       return true;
     }
 
     function applyFilter(value, currentFilter) {
-      if (typeof value !== "string" || !/^(all|ext:[a-z0-9]+)$/.test(value)) return false;
+      if (typeof value !== "string" || !/^(all|video|audio|image|ext:[a-z0-9]+)$/.test(value)) return false;
       if (value === currentFilter) return false;
       changeFilter(value);
       return true;

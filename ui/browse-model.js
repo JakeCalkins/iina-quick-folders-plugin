@@ -7,15 +7,40 @@ const QuickFoldersBrowseModel = (() => {
     ? require("../browse-state.js")
     : QuickFoldersBrowseState;
 
-  function create({ maxSearchResults = 500 } = {}) {
+  function create({ maxSearchResults = 100000 } = {}) {
     let indexRevision = null;
     let indexedRecords = [];
+    let indexedRecordsByPath = new Map();
+    let indexedRecordPositions = new Map();
     let searchCache = { key: null, matches: [], total: 0 };
 
     function updateIndex(files, revision) {
       if (revision === indexRevision) return false;
       indexedRecords = (Array.isArray(files) ? files : []).map(Search.createRecord);
+      indexedRecordsByPath = new Map(indexedRecords.map((record) => [record.item.path, record]));
+      indexedRecordPositions = new Map(indexedRecords.map((record, index) => [record.item.path, index]));
       indexRevision = revision;
+      searchCache = { key: null, matches: [], total: 0 };
+      return true;
+    }
+
+    function updateMetadata(path, metadata) {
+      if (typeof path !== "string" || !metadata || typeof metadata !== "object") return false;
+      const recordIndex = indexedRecordPositions.get(path);
+      if (recordIndex == null) return false;
+      const item = indexedRecords[recordIndex].item;
+      const next = { ...item };
+      let changed = false;
+      ["duration", "width", "height"].forEach((field) => {
+        const value = Number(metadata[field]);
+        if (Number.isFinite(value) && value > 0 && next[field] !== value) {
+          next[field] = value;
+          changed = true;
+        }
+      });
+      if (!changed) return false;
+      indexedRecords[recordIndex] = Search.createRecord(next);
+      indexedRecordsByPath.set(path, indexedRecords[recordIndex]);
       searchCache = { key: null, matches: [], total: 0 };
       return true;
     }
@@ -46,9 +71,19 @@ const QuickFoldersBrowseModel = (() => {
 
     function getItems({ state, query, compiledQuery, filter, preferences }) {
       const currentState = state || {};
-      const currentItems = Array.isArray(currentState.items) ? currentState.items : [];
+      const currentItems = (Array.isArray(currentState.items) ? currentState.items : []).map((item) => {
+        if (!item || item.isDir) return item;
+        const indexed = indexedRecordsByPath.get(item.path);
+        return indexed ? { ...indexed.item, ...item } : item;
+      });
       const hasQuery = Boolean(query);
-      const matchesSearch = (item) => !hasQuery || Search.match(Search.createRecord(item), compiledQuery).matches;
+      const matchesSearch = (item) => {
+        if (!hasQuery) return true;
+        const record = Search.createRecord(item);
+        return item && item.isDir
+          ? Search.matchNavigation(record, compiledQuery).matches
+          : Search.match(record, compiledQuery).matches;
+      };
       let items;
       let totalIndexedMatches = 0;
 
@@ -56,12 +91,9 @@ const QuickFoldersBrowseModel = (() => {
         const indexed = findIndexedFiles(query, compiledQuery, filter);
         totalIndexedMatches = indexed.total;
         const indexedItems = indexed.matches.map(({ file }) => ({
-          path: file.path,
-          name: file.name,
+          ...file,
           isDir: false,
-          size: file.size || null,
           fromSearch: true,
-          watched: Boolean(file.watched),
         }));
         items = currentItems.filter(matchesSearch).concat(indexedItems);
       } else {
@@ -70,12 +102,17 @@ const QuickFoldersBrowseModel = (() => {
 
       const filtered = items.filter((item) => {
         if (!matchesFilter(item, filter)) return false;
-        return !(preferences && preferences.hideWatched && !currentState.viewingWatched && item.watched);
+        return !(
+          preferences && preferences.hideWatched
+          && currentState.currentView !== "watched"
+          && !currentState.viewingWatched
+          && item.watched
+        );
       });
       return { items: filtered, totalIndexedMatches };
     }
 
-    return { getItems, updateIndex };
+    return { getItems, updateIndex, updateMetadata };
   }
 
   return { create };

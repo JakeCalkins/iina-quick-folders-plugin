@@ -17,6 +17,9 @@
         </button>
         <div class="breadcrumb" id="breadcrumb">Quick Folders</div>
         <div class="header-buttons">
+          <button id="command-btn" class="icon-btn command-btn" type="button" title="Command palette (⌘/Ctrl K)" aria-label="Open command palette" aria-haspopup="dialog" aria-controls="command-modal" aria-expanded="false">
+            <span aria-hidden="true">⌘</span>
+          </button>
           <button id="help-btn" class="icon-btn help-btn" type="button" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-haspopup="dialog" aria-controls="help-modal" aria-expanded="false">
             <span class="help-icon" aria-hidden="true">?</span>
           </button>
@@ -62,6 +65,7 @@
         </div>
         <div id="search-bar" class="search-bar hidden">
           <div class="search-control">
+            <div id="search-chips" class="search-chips hidden" aria-label="Active search clauses"></div>
             <div id="search-capabilities" class="search-capabilities" role="tooltip">
               <span class="search-capabilities-title">Search tips</span>
               <span><code>ext:mkv</code> file type</span>
@@ -77,7 +81,11 @@
                 class="search-input"
                 placeholder="Search…"
                 aria-label="Search files"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded="false"
                 aria-describedby="search-capabilities"
+                aria-controls="search-suggestions"
                 aria-keyshortcuts="/ Meta+F Control+F"
               />
               <button id="clear-search-btn" class="clear-btn hidden" type="button" title="Clear search" aria-label="Clear search" disabled>
@@ -86,14 +94,27 @@
                 </svg>
               </button>
             </div>
+            <div id="search-suggestions" class="search-suggestions hidden" role="listbox" aria-label="Search suggestions"></div>
+            <div id="search-error" class="search-error hidden" role="status" aria-live="polite"></div>
           </div>
           <select id="filter-dropdown" class="filter-dropdown" aria-label="Filter by file type">
             <option value="all">All Files</option>
+            <option id="video-filter-option" value="video">Videos</option>
+            <option id="audio-filter-option" value="audio">Audio</option>
+            <option id="image-filter-option" value="image">Images</option>
             <optgroup id="video-group" label="Video"></optgroup>
             <optgroup id="audio-group" label="Audio"></optgroup>
             <optgroup id="image-group" label="Image"></optgroup>
             <optgroup id="other-group" label="Other"></optgroup>
           </select>
+          <div class="layout-toggle" role="group" aria-label="Browser layout">
+            <button id="list-layout-btn" class="layout-btn active" type="button" aria-label="List layout" aria-pressed="true" title="List layout">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10M3 8h10M3 12h10" /></svg>
+            </button>
+            <button id="grid-layout-btn" class="layout-btn" type="button" aria-label="Poster grid layout" aria-pressed="false" title="Poster grid layout">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="4" height="4" rx=".5"/><rect x="9.5" y="2.5" width="4" height="4" rx=".5"/><rect x="2.5" y="9.5" width="4" height="4" rx=".5"/><rect x="9.5" y="9.5" width="4" height="4" rx=".5"/></svg>
+            </button>
+          </div>
           <button id="queue-bucket" class="queue-bucket" type="button" title="Queue is empty — drop media here" aria-label="Queue is empty — drop media here" aria-controls="queue-panel" aria-expanded="false">
             <svg viewBox="0 0 20 20" aria-hidden="true">
               <path d="M5 5.5h8M5 10h8M5 14.5h5" />
@@ -142,6 +163,30 @@
         </div>
       </div>
     </div>
+    <div id="command-modal" class="confirm-modal command-modal hidden" role="dialog" aria-modal="true" aria-labelledby="command-modal-title">
+      <div class="confirm-card command-card">
+        <h2 id="command-modal-title">Command Palette</h2>
+        <input id="command-input" class="command-input" type="text" placeholder="Type a command…" aria-label="Search commands" autocomplete="off" />
+        <div id="command-list" class="command-list"></div>
+        <p id="command-empty" class="command-empty hidden">No available commands</p>
+      </div>
+    </div>
+    <div id="diagnostics-modal" class="confirm-modal diagnostics-modal hidden" role="dialog" aria-modal="true" aria-labelledby="diagnostics-modal-title">
+      <div class="confirm-card diagnostics-card">
+        <div class="help-heading">
+          <div>
+            <span class="help-eyebrow">Privacy-safe local report</span>
+            <h2 id="diagnostics-modal-title">Diagnostics</h2>
+            <p>Counts and categorized events only. Folder and media names are never included.</p>
+          </div>
+          <button id="close-diagnostics-btn" class="help-close-btn" type="button" aria-label="Close diagnostics" title="Close (Escape)">×</button>
+        </div>
+        <div id="diagnostics-content" class="diagnostics-content" aria-live="polite">Loading…</div>
+        <div class="confirm-actions">
+          <button id="reset-preview-caches-btn" class="confirm-btn" type="button">Reset preview caches</button>
+        </div>
+      </div>
+    </div>
     <div id="help-modal" class="confirm-modal help-modal hidden" role="dialog" aria-modal="true" aria-labelledby="help-modal-title" aria-describedby="help-modal-description">
       <div class="confirm-card help-card">
         <div class="help-heading">
@@ -162,6 +207,7 @@
             <dl>
               <div class="shortcut-row"><dt><kbd id="open-window-shortcut">⌘ ⇧ K</kbd></dt><dd>Open Quick Folders</dd></div>
               <div class="shortcut-row"><dt><kbd id="add-folder-shortcut">N</kbd></dt><dd>Add a folder</dd></div>
+              <div class="shortcut-row"><dt><kbd>⌘/Ctrl K</kbd></dt><dd>Open the command palette</dd></div>
               <div class="shortcut-row"><dt><kbd>?</kbd></dt><dd>Show or hide this help</dd></div>
             </dl>
           </section>
@@ -201,6 +247,9 @@
     <script src="../queue-state.js"></script>
     <script src="messaging.js"></script>
     <script src="search.js"></script>
+    <script src="browser-context.js"></script>
+    <script src="commands.js"></script>
+    <script src="command-palette.js"></script>
     <script src="browse-model.js"></script>
     <script src="interaction-controller.js"></script>
     <script src="keyboard-shortcuts.js"></script>
@@ -210,6 +259,7 @@
     <script src="media-preview.js"></script>
     <script src="dialog-controller.js"></script>
     <script src="item-view.js"></script>
+    <script src="item-collection.js"></script>
     <script src="queue-controller.js"></script>
     <script src="app.js"></script>
   </body>

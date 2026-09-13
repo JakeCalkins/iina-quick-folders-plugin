@@ -22,7 +22,7 @@ rm -f -- "$archive" "$checksum"
 (
   cd -- "$repository_root"
   {
-    find . -maxdepth 1 -type f \
+    find . -maxdepth 1 -type f ! -name '.*' \
       \( -name 'Info.json' -o -name '*.js' -o -name '*.html' -o -name '*.css' \) \
       -print
     find ./ui -type f \

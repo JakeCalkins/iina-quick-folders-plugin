@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_No unreleased changes yet._
+### Added
+- Added durable playback progress, configurable automatic completion, conservative resume, and Continue Watching
+- Added Recently Added, Unwatched, and filename-based Continue Series smart views
+- Added list and poster-grid layouts backed by path-stable virtualization for 100,000-item result sets
+- Added a searchable command palette, structured search suggestions, and removable query chips for playback state, duration, resolution, first-seen date, folder, and extension clauses
+- Added validated browser-context restoration for location, query, filter, layout, and scroll position
+- Added privacy-safe, in-memory diagnostics and preview-cache controls
+
+### Changed
+- Split settings, playback history, browser context, and the versioned per-root index into independently migrated stores
+- Made startup publish compact navigation state immediately, then publish the cached search index and reconcile roots in the background while retaining unavailable-root results
+- Preserved lazily discovered duration and resolution metadata in the index and replaced thumbnails only after their new image is ready
+- Made index refreshes use per-root change markers to reconcile only changed directories when supported, with a safe full-scan fallback, atomic publication, and deduplicated concurrent refreshes
+- Added validated backup recovery for persisted JSON state
+
+### Fixed
+- Prevented a newly loaded title from overwriting the preceding title's progress during file transitions
+- Kept command-palette focus restoration from stealing focus from commands that open another dialog or focus search
 
 ## [2.7.0] - 2026-09-12
 

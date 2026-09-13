@@ -56,9 +56,12 @@ test("native select input and change events apply a filter only once", () => {
   const harness = createHarness();
 
   assert.equal(harness.controller.applyFilter("ext:mkv", "all"), true);
+  assert.equal(harness.controller.applyFilter("video", "ext:mkv"), true);
+  assert.equal(harness.controller.applyFilter("audio", "video"), true);
+  assert.equal(harness.controller.applyFilter("image", "audio"), true);
   assert.equal(harness.controller.applyFilter("ext:mkv", "ext:mkv"), false);
   assert.equal(harness.controller.applyFilter("all", "ext:mkv"), true);
-  assert.deepEqual(harness.filters, ["ext:mkv", "all"]);
+  assert.deepEqual(harness.filters, ["ext:mkv", "video", "audio", "image", "all"]);
 });
 
 test("interaction boundary rejects malformed navigation and filter values", () => {

@@ -46,10 +46,12 @@ function createAsyncResourceLoader(options) {
   function request(key) {
     if (!options.isValid(key)) return false;
     if (cache.has(key)) {
+      if (typeof options.onCacheHit === "function") options.onCacheHit(key);
       deliver(key, cache.get(key));
       return true;
     }
     if (pending.has(key)) return true;
+    if (typeof options.onCacheMiss === "function") options.onCacheMiss(key);
     const version = versions.get(key) || 0;
     versions.set(key, version);
     pending.add(key);
@@ -66,7 +68,23 @@ function createAsyncResourceLoader(options) {
     if (queuedIndex !== -1) queue.splice(queuedIndex, 1);
   }
 
-  return { remove, request };
+  function clear() {
+    cache.clear();
+    pending.clear();
+    queue.splice(0, queue.length);
+    versions.forEach((version, key) => versions.set(key, version + 1));
+  }
+
+  function getStats() {
+    return {
+      active: activeJobs,
+      cached: cache.size,
+      pending: pending.size,
+      queued: queue.length,
+    };
+  }
+
+  return { clear, getStats, remove, request };
 }
 
 module.exports = { createAsyncResourceLoader };

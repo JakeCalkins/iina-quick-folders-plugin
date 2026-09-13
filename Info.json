@@ -21,6 +21,7 @@
     "videoOnly": false,
     "hideWatched": false,
     "showBitrateChips": false,
+    "completionThreshold": 90,
     "maxIndexDepth": 3,
     "openWindowShortcut": "cmd+shift+k",
     "addFolderShortcut": "n"
