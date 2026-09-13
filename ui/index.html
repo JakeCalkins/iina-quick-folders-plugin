@@ -47,7 +47,10 @@
       <div id="depth-warning" class="depth-warning hidden">
         ⚠️ Files at this depth aren't searchable for performance reasons
       </div>
-      <section id="item-list" class="list" role="listbox" aria-multiselectable="true" aria-label="Folders and files"></section>
+      <div class="browser-content">
+        <nav id="column-browser" class="column-browser hidden" aria-label="Folder hierarchy"></nav>
+        <section id="item-list" class="list" role="listbox" aria-multiselectable="true" aria-label="Folders and files"></section>
+      </div>
       <footer class="footer">
         <div id="spinner-container" class="spinner-container">
           <div class="progress-info">
@@ -202,6 +205,8 @@
     <script src="interaction-controller.js"></script>
     <script src="keyboard-shortcuts.js"></script>
     <script src="view-helpers.js"></script>
+    <script src="responsive-layout.js"></script>
+    <script src="column-view.js"></script>
     <script src="media-preview.js"></script>
     <script src="dialog-controller.js"></script>
     <script src="item-view.js"></script>

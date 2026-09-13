@@ -25,6 +25,16 @@ const QuickFoldersBrowseState = (() => {
     });
   }
 
+  function getAncestorLocations(currentPath, rootPath) {
+    if (!isPathWithinRoots(currentPath, [{ path: rootPath }]) || currentPath === rootPath) return [];
+    const normalizedRoot = rootPath === "/" ? "" : rootPath.replace(/\/+$/, "");
+    const relativeSegments = currentPath.substring(normalizedRoot.length).split("/").filter(Boolean);
+    return relativeSegments.map((_segment, index) => {
+      const suffix = relativeSegments.slice(0, index).join("/");
+      return suffix ? `${normalizedRoot}/${suffix}` : (normalizedRoot || "/");
+    });
+  }
+
   function partitionWatched(items) {
     const active = [];
     const watched = [];
@@ -107,6 +117,7 @@ const QuickFoldersBrowseState = (() => {
   }
 
   return {
+    getAncestorLocations,
     groupAvailableExtensions,
     isPathWithinRoots,
     matchesFileFilter,

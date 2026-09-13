@@ -410,7 +410,7 @@ function loadState() {
   }
 }
 
-function listFolder(path) {
+function listFolder(path, { includeFileSizes = true } = {}) {
   try {
     const listing = file.list(path, { includeSubDir: false }) || [];
     const preferenceSnapshot = getPreferencesSnapshot();
@@ -439,7 +439,7 @@ function listFolder(path) {
         const isDir = item.isDir || item.is_dir;
         const fullPath = path.endsWith("/") ? path + itemName : path + "/" + itemName;
         let fileSize = null;
-        if (!isDir) {
+        if (!isDir && includeFileSizes) {
           try {
             const stats = file.stat(fullPath);
             fileSize = stats && stats.size ? stats.size : null;
@@ -515,31 +515,66 @@ function getQueueItems() {
   return queuePaths.map((path) => getFileItem(path, directoryCache)).filter(Boolean);
 }
 
-function getCurrentItems() {
-  if (viewingWatched) return getWatchedItems();
-
-  if (!currentPath) {
-    // At root: show folder roots
-    const roots = folderRoots.map((f) => ({
+function getRootItems() {
+  const roots = folderRoots.map((f) => ({
       path: f.path,
       name: f.name,
       isDir: true,
       isRoot: true,
-    }));
-    if ((preferences.get("hideWatched") ?? false)) {
-      roots.push({
-        path: "@watched",
-        name: "Watched",
-        isDir: true,
-        isWatchedRoot: true,
-        watchedCount: getWatchedItems().length,
-      });
-    }
-    return roots;
+  }));
+  if ((preferences.get("hideWatched") ?? false)) {
+    roots.push({
+      path: "@watched",
+      name: "Watched",
+      isDir: true,
+      isWatchedRoot: true,
+      watchedCount: getWatchedItems().length,
+    });
   }
+  return roots;
+}
+
+function getCurrentItems() {
+  if (viewingWatched) return getWatchedItems();
+  if (!currentPath) return getRootItems();
 
   // Inside a folder: show contents
   return listFolder(currentPath);
+}
+
+function getNavigationColumns() {
+  if (!currentPath && !viewingWatched) return [];
+
+  const rootItems = getRootItems();
+  if (viewingWatched) {
+    return [{
+      id: "quick-folders",
+      title: "Quick Folders",
+      items: rootItems,
+      selectedPath: "@watched",
+    }];
+  }
+
+  const root = getCurrentFolderRoot();
+  if (!root) return [];
+  const locations = BrowseState.getAncestorLocations(currentPath, root.path);
+  const columns = [{
+    id: "quick-folders",
+    title: "Quick Folders",
+    items: rootItems,
+    selectedPath: root.path,
+  }];
+  locations.forEach((location, index) => {
+    columns.push({
+      id: location,
+      title: location.split("/").pop() || location,
+      // Ancestor columns intentionally skip file stats; the active detail
+      // column owns sizes and metadata, keeping resize/navigation inexpensive.
+      items: listFolder(location, { includeFileSizes: false }),
+      selectedPath: locations[index + 1] || currentPath,
+    });
+  });
+  return columns;
 }
 
 function getPreferencesSnapshot() {
@@ -600,6 +635,7 @@ function updateWindow() {
     folderDepth: getCurrentFolderDepth(),
     preferences: preferenceSnapshot,
     queueItems: getQueueItems(),
+    navigationColumns: getNavigationColumns(),
   };
 
   // The complete index can be large. Publish it only when its revision changes;
@@ -810,7 +846,8 @@ function registerNativeQueueBridge() {
   setTimeout(() => globalApi.postMessage("quick-folders-queue-player-ready"), 0);
 }
 
-function setQueuePanelOpen({ open } = {}) {
+function setQueuePanelOpen({ open, resize = true } = {}) {
+  if (!resize) return;
   standaloneWindow.setFrame(open ? QUEUE_WINDOW_WIDTH : BROWSER_WINDOW_WIDTH, WINDOW_HEIGHT, null, null);
 }
 

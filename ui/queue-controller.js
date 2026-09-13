@@ -113,7 +113,7 @@ const QuickFoldersQueueController = (() => {
       return !panel.classList.contains("hidden");
     }
 
-    function setOpen(open, { notify = true } = {}) {
+    function setOpen(open, { notify = true, focus = true } = {}) {
       const nextOpen = Boolean(open);
       panel.classList.toggle("hidden", !nextOpen);
       toggleButton.setAttribute("aria-expanded", String(nextOpen));
@@ -121,7 +121,7 @@ const QuickFoldersQueueController = (() => {
       if (notify) onOpenChange(nextOpen);
       // The native window resize completes after WebKit's next animation
       // frame. Delay focus until the newly revealed panel can accept it.
-      if (nextOpen) setTimeout(() => {
+      if (nextOpen && focus) setTimeout(() => {
         const target = list.querySelector(".queue-row[tabindex='0']") || closeButton;
         target.focus();
       }, 220);
@@ -367,8 +367,8 @@ const QuickFoldersQueueController = (() => {
       render();
     }
 
-    toggleButton.addEventListener("click", () => setOpen(!isOpen()));
-    closeButton.addEventListener("click", () => setOpen(false));
+    toggleButton.addEventListener("click", () => setOpen(!isOpen(), { source: "user" }));
+    closeButton.addEventListener("click", () => setOpen(false, { source: "user" }));
     clearButton.addEventListener("click", () => sendMessage("queue-clear"));
     removeButton.addEventListener("click", () => removePaths(Array.from(selectedPaths)));
     playButton.addEventListener("click", () => sendMessage("queue-play"));

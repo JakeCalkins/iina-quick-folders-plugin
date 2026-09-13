@@ -177,6 +177,10 @@ test("queue editor multi-selects, reorders, and accepts bucket and pane drops", 
       sendMessage(type, data) { messages.push({ type, data }); },
       onOpenChange() {},
     });
+    controller.setOpen(true, { notify: false, focus: false });
+    assert.equal(elements.panel.classList.contains("hidden"), false);
+    assert.equal(document.activeElement, null, "responsive opening should not steal focus");
+    controller.setOpen(false, { notify: false, focus: false });
     controller.setItems([
       { name: "a.mp4", path: "/media/a.mp4" },
       { name: "b.mkv", path: "/media/b.mkv" },

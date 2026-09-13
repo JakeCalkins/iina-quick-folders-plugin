@@ -32,6 +32,8 @@ test("shared modules export through IINA's empty CommonJS wrapper", () => {
   const queueState = load("queue-state.js");
   const thumbnailService = load("thumbnail-service.js");
   const mediaPreview = load("ui/media-preview.js");
+  const columnView = load("ui/column-view.js");
+  const responsiveLayout = load("ui/responsive-layout.js");
 
   assert.equal(fileTypes.getFileTypeByExt("mp4"), "video");
   assert.equal(browseState.isPathWithinRoots("/media/movie.mp4", [{ path: "/media" }]), true);
@@ -40,6 +42,8 @@ test("shared modules export through IINA's empty CommonJS wrapper", () => {
   assert.deepEqual(Array.from(queueState.addPaths(["a"], ["b"])), ["a", "b"]);
   assert.equal(typeof thumbnailService.createThumbnailService, "function");
   assert.equal(typeof mediaPreview.create, "function");
+  assert.equal(typeof columnView.create, "function");
+  assert.equal(typeof responsiveLayout.create, "function");
 });
 
 test("main entry registers normalized shortcuts and refreshes preference changes", () => {
