@@ -14,13 +14,26 @@ const QuickFoldersQueuePlayback = (() => {
   function create(options) {
     const { core, playlist } = options;
     const wait = options.wait || ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+    const authorize = typeof options.authorize === "function" ? options.authorize : async () => true;
+    const authorizeAll = typeof options.authorizeAll === "function" ? options.authorizeAll : null;
+
+    async function authorizePaths(paths) {
+      if (authorizeAll) {
+        if (!await authorizeAll(paths)) throw new Error("A queue item is no longer safely accessible");
+        return;
+      }
+      for (const path of paths) {
+        if (!await authorize(path)) throw new Error("A queue item is no longer safely accessible");
+      }
+    }
 
     function playlistMatches(items, paths) {
       if (!Array.isArray(items) || items.length !== paths.length) return false;
       return items.every((item, index) => item && item.filename === paths[index]);
     }
 
-    function rebuildQueueFromFirstItem(items, firstIndex, paths) {
+    async function rebuildQueueFromFirstItem(items, firstIndex, paths) {
+      await authorizePaths(paths);
       const needsRemoval = items.length > 1;
       if (needsRemoval && typeof playlist.remove !== "function") {
         throw new Error("This IINA version cannot isolate the queue playlist");
@@ -62,7 +75,10 @@ const QuickFoldersQueuePlayback = (() => {
     }
 
     async function start(paths, { openFirst = true } = {}) {
-      if (openFirst) core.open(paths[0]);
+      if (openFirst) {
+        await authorizePaths([paths[0]]);
+        core.open(paths[0]);
+      }
       if (!playlist || typeof playlist.list !== "function" || typeof playlist.play !== "function") return;
 
       // IINA's folder matcher updates the playlist asynchronously after a local
@@ -87,6 +103,7 @@ const QuickFoldersQueuePlayback = (() => {
         if (playlistMatches(items, paths)) {
           stableSamples++;
           if (stableSamples < REQUIRED_STABLE_SAMPLES) continue;
+          await authorizePaths(paths);
           playlist.play(0);
           return;
         }
@@ -101,9 +118,10 @@ const QuickFoldersQueuePlayback = (() => {
         // add() is called without an index. Verify the native result and use
         // move() to enforce queue order instead of trusting insertion position.
         if (hasQueueMembership(items, paths)) {
+          await authorizePaths(paths);
           reorderQueueItems(items, paths);
         } else {
-          rebuildQueueFromFirstItem(items, firstIndex, paths);
+          await rebuildQueueFromFirstItem(items, firstIndex, paths);
         }
         // The retained first item becomes index zero after backwards removal.
         // Reassert it immediately in case the native player changed position.

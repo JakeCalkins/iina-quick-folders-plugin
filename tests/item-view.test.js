@@ -9,6 +9,7 @@ class FakeElement {
     this.dataset = {};
     this.listeners = new Map();
     this.attributes = new Map();
+    this.style = {};
     this._classes = new Set();
     this.classList = {
       add: (...names) => names.forEach((name) => this._classes.add(name)),
@@ -80,14 +81,15 @@ function installFakeDom() {
   };
 }
 
-function createFileRow({ selected = false, isIndexing = false, item = null } = {}) {
+function createFileRow({ selected = false, focused = true, isIndexing = false, item = null, layout = "list" } = {}) {
   const calls = { dragEnd: [], dragStart: [], focus: [], folders: [], move: [], open: [], select: [] };
   const rowItem = item || { name: "Example.mkv", path: "/media/Example.mkv", isDir: false };
   const row = ItemView.create(rowItem, {
     atRoot: false,
-    focusedPath: rowItem.path,
+    focusedPath: focused ? rowItem.path : null,
     hasSearchQuery: false,
     isIndexing,
+    layout,
     mediaPreview: { attachMetadata() {}, loadThumbnail() {} },
     selectedPaths: new Set(selected ? [rowItem.path] : []),
     onFocusItem(entry) { calls.focus.push(entry.path); },
@@ -193,6 +195,7 @@ test("focused file rows use Enter for selection, Space for playback, and arrows 
     assert.equal(row.getAttribute("role"), "option");
     assert.equal(row.getAttribute("aria-selected"), "false");
     assert.equal(row.tabIndex, 0);
+    assert.equal(row.classList.contains("focused"), true);
 
     const enter = row.dispatch("keydown", { key: "Enter" });
     assert.deepEqual(calls.open, []);
@@ -264,6 +267,65 @@ test("row shortcuts do not override a nested button's keyboard activation", () =
     assert.equal(enter.defaultPrevented, false);
     assert.equal(space.defaultPrevented, false);
     assert.deepEqual(calls.folders, []);
+  } finally {
+    delete global.document;
+    delete global.QuickFoldersView;
+    delete global.QuickFoldersFileTypes;
+  }
+});
+
+test("clamps playback progress and exposes stable state labels and accessible values", () => {
+  installFakeDom();
+  try {
+    const item = {
+      name: "Episode.mkv",
+      path: "/media/Episode.mkv",
+      isDir: false,
+      fromSmartView: true,
+      progress: { state: "in-progress", position: 150, duration: 100 },
+    };
+    const { row } = createFileRow({ item });
+    const thumbnail = row.children[0];
+    const progress = thumbnail.children[0];
+    const info = row.children[1].children[1];
+    const stateTag = info.children[1];
+
+    assert.equal(progress.classList.contains("playback-progress"), true);
+    assert.equal(progress.getAttribute("aria-valuenow"), "100");
+    assert.equal(progress.getAttribute("aria-label"), "100% watched");
+    assert.equal(progress.children[0].style.width, "100%");
+    assert.equal(stateTag.textContent, "In Progress");
+    assert.equal(info.children[2].textContent, "media");
+    assert.match(row.getAttribute("aria-label"), /In Progress, 100% watched/);
+    assert.deepEqual(ItemView.getPlaybackPresentation({
+      playbackState: "in-progress",
+      progressFraction: -0.5,
+    }), {
+      fraction: 0,
+      hasPlaybackData: true,
+      label: "In Progress",
+      percent: 0,
+      state: "in-progress",
+      progressLabel: "0% watched",
+    });
+  } finally {
+    delete global.document;
+    delete global.QuickFoldersView;
+    delete global.QuickFoldersFileTypes;
+  }
+});
+
+test("grid rows forward two-dimensional arrow navigation", () => {
+  installFakeDom();
+  try {
+    const { calls, row } = createFileRow({ layout: "grid" });
+    const left = row.dispatch("keydown", { key: "ArrowLeft" });
+    const right = row.dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(left.defaultPrevented && right.defaultPrevented, true);
+    assert.deepEqual(calls.move, [
+      ["/media/Example.mkv", "ArrowLeft", { extendSelection: false }],
+      ["/media/Example.mkv", "ArrowRight", { extendSelection: false }],
+    ]);
   } finally {
     delete global.document;
     delete global.QuickFoldersView;

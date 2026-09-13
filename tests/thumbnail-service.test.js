@@ -196,6 +196,31 @@ test("returns an immediate fallback for MKV instead of starting an unbounded Qui
   assert.equal(shouldUseQuickLook("/media/movie.mp4", "video"), true);
 });
 
+test("rechecks source authorization immediately before native thumbnail tools", async () => {
+  const commands = [];
+  let authorizationChecks = 0;
+  const generator = createThumbnailGenerator({
+    file: createFileApi(),
+    utils: {
+      resolvePath: () => "/tmp/example-plugin/thumbs",
+      async exec(tool) {
+        commands.push(tool);
+        return { status: 0 };
+      },
+    },
+    isValid: () => true,
+    async isAuthorized() {
+      authorizationChecks++;
+      return authorizationChecks === 1;
+    },
+    sessionId: "test",
+  });
+
+  assert.equal(await generator.generate("/media/movie.mp4"), null);
+  assert.equal(authorizationChecks, 2);
+  assert.deepEqual(commands, ["/bin/mkdir"]);
+});
+
 test("uses an optional ffmpeg install for a bounded MKV frame without invoking Quick Look", async () => {
   const commands = [];
   const checkedTools = [];

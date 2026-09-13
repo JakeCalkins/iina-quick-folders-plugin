@@ -14,8 +14,29 @@ function registerBackendMessages() {
   QuickFoldersMessaging.onMessage("update-items", handleStateUpdate);
   QuickFoldersMessaging.onMessage("item-action-result", (result) => handleItemActionResult(result || {}));
   QuickFoldersMessaging.onMessage("queue-action-result", (result) => handleQueueActionResult(result || {}));
+  QuickFoldersMessaging.onMessage("diagnostics-ready", renderDiagnostics);
+  QuickFoldersMessaging.onMessage("diagnostics-reset", () => {
+    mediaPreview.clear();
+    renderItems();
+    showToast("Preview caches and diagnostics reset");
+    QuickFoldersMessaging.send("request-diagnostics");
+  });
   QuickFoldersMessaging.onMessage("thumbnail-ready", mediaPreview.handleThumbnailReady);
-  QuickFoldersMessaging.onMessage("media-metadata-ready", mediaPreview.handleMetadataReady);
+  QuickFoldersMessaging.onMessage("media-metadata-ready", (data) => {
+    mediaPreview.handleMetadataReady(data);
+    if (!data) return;
+    const indexedChanged = browseModel.updateMetadata(data.path, data.metadata);
+    let visibleChanged = false;
+    currentState.items = (currentState.items || []).map((item) => {
+      if (!item || item.path !== data.path || !data.metadata) return item;
+      visibleChanged = true;
+      return { ...item, ...data.metadata };
+    });
+    const queryUsesMediaMetadata = compiledSearchQuery.terms.some(
+      (term) => term.field === "duration" || term.field === "resolution",
+    );
+    if ((indexedChanged || visibleChanged) && queryUsesMediaMetadata) scheduleMetadataRender();
+  });
 }
 
 const itemListEl = document.getElementById("item-list");
@@ -25,9 +46,19 @@ const breadcrumb = document.getElementById("breadcrumb");
 const addFolderBtn = document.getElementById("add-folder-btn");
 const refreshBtn = document.getElementById("refresh-btn");
 const helpBtn = document.getElementById("help-btn");
+const commandBtn = document.getElementById("command-btn");
+const listLayoutBtn = document.getElementById("list-layout-btn");
+const gridLayoutBtn = document.getElementById("grid-layout-btn");
 const searchInput = document.getElementById("search-input");
+const searchControl = searchInput ? searchInput.closest(".search-control") : null;
 const clearSearchBtn = document.getElementById("clear-search-btn");
+const searchChips = document.getElementById("search-chips");
+const searchSuggestions = document.getElementById("search-suggestions");
+const searchError = document.getElementById("search-error");
 const filterDropdown = document.getElementById("filter-dropdown");
+const videoFilterOption = document.getElementById("video-filter-option");
+const audioFilterOption = document.getElementById("audio-filter-option");
+const imageFilterOption = document.getElementById("image-filter-option");
 const videoGroup = document.getElementById("video-group");
 const audioGroup = document.getElementById("audio-group");
 const imageGroup = document.getElementById("image-group");
@@ -58,6 +89,14 @@ const queueClearBtn = document.getElementById("queue-clear-btn");
 const queueRemoveSelectedBtn = document.getElementById("queue-remove-selected-btn");
 const queueCloseBtn = document.getElementById("queue-close-btn");
 const queuePlayBtn = document.getElementById("queue-play-btn");
+const commandModal = document.getElementById("command-modal");
+const commandInput = document.getElementById("command-input");
+const commandList = document.getElementById("command-list");
+const commandEmpty = document.getElementById("command-empty");
+const diagnosticsModal = document.getElementById("diagnostics-modal");
+const diagnosticsContent = document.getElementById("diagnostics-content");
+const closeDiagnosticsBtn = document.getElementById("close-diagnostics-btn");
+const resetPreviewCachesBtn = document.getElementById("reset-preview-caches-btn");
 
 setTimeout(() => {
   if (!messageReceived) setIndexingUi(false);
@@ -76,7 +115,19 @@ let visibleItems = [];
 let renderedItems = [];
 let actionPending = false;
 let toastTimer = null;
-const MAX_RENDERED_SEARCH_RESULTS = 500;
+let currentLayout = "list";
+let currentBrowserContext = QuickFoldersBrowserContext.createDefault();
+let didRestoreBrowserContext = false;
+let pendingScrollAnchor = null;
+let pendingFocusedPath = null;
+let restoreNavigationSent = false;
+let restoreNavigationPending = false;
+let restoreNavigationFallbackTimer = null;
+let contextSaveTimer = null;
+let metadataRenderTimer = null;
+let currentItemViewOptions = null;
+let suppressSearchSuggestions = false;
+const MAX_RENDERED_SEARCH_RESULTS = 100000;
 let currentPreferences = {
   filterImages: true,
   filterAudio: true,
@@ -93,6 +144,8 @@ let currentState = {
   currentPath: null,
   atRoot: true,
   viewingWatched: false,
+  currentView: null,
+  folderRoots: [],
 };
 
 function updateClearSearchButton() {
@@ -100,6 +153,221 @@ function updateClearSearchButton() {
   const hasQuery = currentSearchQuery.length > 0;
   clearSearchBtn.disabled = !hasQuery;
   clearSearchBtn.classList.toggle("hidden", !hasQuery);
+}
+
+function getContextOptions() {
+  const availableMediaTypes = Array.from(new Set(
+    availableExtensions.map((extension) => QuickFoldersFileTypes.getFileTypeByExt(extension)),
+  )).filter((type) => type !== QuickFoldersFileTypes.FILE_TYPES.OTHER);
+  return {
+    roots: currentState.folderRoots || [],
+    availableExtensions,
+    availableMediaTypes,
+    smartViewIds: ["continue", "series", "recent", "unwatched", "watched"],
+  };
+}
+
+function getCurrentLocation() {
+  if (currentState.currentView) return { kind: "smart", viewId: currentState.currentView };
+  if (currentState.currentPath) return { kind: "folder", path: currentState.currentPath };
+  return { kind: "root" };
+}
+
+function scheduleContextSave() {
+  if (!didRestoreBrowserContext || restoreNavigationPending) return;
+  if (contextSaveTimer) clearTimeout(contextSaveTimer);
+  contextSaveTimer = setTimeout(() => {
+    contextSaveTimer = null;
+    const options = getContextOptions();
+    currentBrowserContext = QuickFoldersBrowserContext.addRecentLocation(
+      currentBrowserContext,
+      getCurrentLocation(),
+      options,
+    );
+    currentBrowserContext = QuickFoldersBrowserContext.reconcile({
+      ...currentBrowserContext,
+      location: getCurrentLocation(),
+      query: currentSearchQuery,
+      filter: currentFilter,
+      layout: currentLayout,
+      focusedPath,
+      scrollAnchor: itemCollection.captureAnchor(),
+    }, options);
+    QuickFoldersMessaging.send(
+      "save-browser-context",
+      QuickFoldersBrowserContext.toPersistence(currentBrowserContext, options),
+    );
+  }, 180);
+}
+
+function setLayout(layout, { persist = true } = {}) {
+  const nextLayout = QuickFoldersItemCollection.normalizeLayout(layout);
+  if (nextLayout === currentLayout && persist) return;
+  currentLayout = nextLayout;
+  mediaPreview.beginRender({ preservePending: true });
+  itemCollection.setLayout(nextLayout);
+  if (visibleItems.length === 0) renderItems({ preservePending: true });
+  if (listLayoutBtn) {
+    listLayoutBtn.classList.toggle("active", nextLayout === "list");
+    listLayoutBtn.setAttribute("aria-pressed", String(nextLayout === "list"));
+  }
+  if (gridLayoutBtn) {
+    gridLayoutBtn.classList.toggle("active", nextLayout === "grid");
+    gridLayoutBtn.setAttribute("aria-pressed", String(nextLayout === "grid"));
+  }
+  requestAnimationFrame(() => mediaPreview.requestVisible());
+  if (persist) scheduleContextSave();
+}
+
+function applySearchValue(value, { render = true, focus = false } = {}) {
+  currentSearchQuery = String(value || "");
+  compiledSearchQuery = QuickFoldersSearch.compileQuery(currentSearchQuery);
+  searchInput.value = currentSearchQuery;
+  updateClearSearchButton();
+  renderSearchAssists();
+  if (render) renderItems();
+  if (focus) searchInput.focus();
+  scheduleContextSave();
+}
+
+function hideSearchSuggestions() {
+  if (!searchSuggestions) return;
+  searchSuggestions.innerHTML = "";
+  searchSuggestions.classList.add("hidden");
+  searchInput.setAttribute("aria-expanded", "false");
+  searchInput.removeAttribute("aria-activedescendant");
+}
+
+function renderSearchAssists() {
+  if (searchError) {
+    const firstError = compiledSearchQuery.errors[0];
+    searchError.textContent = firstError ? firstError.message : "";
+    searchError.classList.toggle("hidden", !firstError);
+    searchInput.setAttribute("aria-invalid", String(Boolean(firstError)));
+  }
+  if (searchChips) {
+    searchChips.innerHTML = "";
+    compiledSearchQuery.terms
+      .filter((term) => term.field !== "name")
+      .forEach((term) => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "search-chip";
+        chip.textContent = `${term.raw} ×`;
+        chip.title = `Remove ${term.raw}`;
+        chip.addEventListener("click", () => {
+          applySearchValue(QuickFoldersSearch.removeTerm(currentSearchQuery, term), { focus: true });
+        });
+        searchChips.appendChild(chip);
+      });
+    searchChips.classList.toggle("hidden", searchChips.children.length === 0);
+  }
+  if (!searchSuggestions) return;
+  if (document.activeElement && searchSuggestions.contains(document.activeElement)) return;
+  searchSuggestions.innerHTML = "";
+  const activeElement = document.activeElement;
+  const hasFocus = (
+    activeElement === searchInput
+    || (activeElement && searchSuggestions.contains(activeElement))
+  ) && !suppressSearchSuggestions;
+  const suggestions = hasFocus ? QuickFoldersSearch.getSuggestions(currentSearchQuery, {
+    cursor: searchInput.selectionStart,
+    folders: currentState.folderRoots || [],
+    limit: 6,
+  }) : [];
+  suggestions.forEach((suggestion) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "search-suggestion";
+    button.id = `search-suggestion-${suggestion.id}`.replace(/[^a-z0-9_-]/gi, "-");
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-selected", "false");
+    const label = document.createElement("span");
+    label.textContent = suggestion.label;
+    const description = document.createElement("small");
+    description.textContent = suggestion.description;
+    button.appendChild(label);
+    button.appendChild(description);
+    button.addEventListener("mousedown", (event) => event.preventDefault());
+    button.addEventListener("focus", () => {
+      searchSuggestions.querySelectorAll("[role='option']").forEach((option) => {
+        option.setAttribute("aria-selected", String(option === button));
+      });
+      searchInput.setAttribute("aria-activedescendant", button.id);
+    });
+    const applyCurrentSuggestion = () => {
+      const result = QuickFoldersSearch.applySuggestion(currentSearchQuery, suggestion);
+      searchInput.focus();
+      suppressSearchSuggestions = true;
+      applySearchValue(result.value, { focus: true });
+      searchInput.setSelectionRange(result.cursor, result.cursor);
+    };
+    button.addEventListener("click", applyCurrentSuggestion);
+    button.addEventListener("keydown", (event) => {
+      const buttons = Array.from(searchSuggestions.querySelectorAll("button"));
+      const index = buttons.indexOf(button);
+      if ((event.key === "Enter" || event.key === " ") && !event.isComposing) {
+        event.preventDefault();
+        applyCurrentSuggestion();
+      } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        buttons[(index + direction + buttons.length) % buttons.length].focus();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        searchInput.focus();
+        suppressSearchSuggestions = true;
+        hideSearchSuggestions();
+      }
+    });
+    searchSuggestions.appendChild(button);
+  });
+  searchSuggestions.classList.toggle("hidden", suggestions.length === 0);
+  searchInput.setAttribute("aria-expanded", String(suggestions.length > 0));
+  if (suggestions.length === 0) searchInput.removeAttribute("aria-activedescendant");
+}
+
+function scheduleMetadataRender() {
+  if (metadataRenderTimer) return;
+  metadataRenderTimer = setTimeout(() => {
+    metadataRenderTimer = null;
+    renderItems({ preservePending: true });
+  }, 60);
+}
+
+function appendDiagnosticGroup(title, values) {
+  if (!diagnosticsContent || !values || Object.keys(values).length === 0) return;
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  const list = document.createElement("dl");
+  Object.entries(values).forEach(([name, value]) => {
+    const row = document.createElement("div");
+    const term = document.createElement("dt");
+    const detail = document.createElement("dd");
+    term.textContent = name.replace(/[.-]/g, " ");
+    detail.textContent = String(value);
+    row.appendChild(term);
+    row.appendChild(detail);
+    list.appendChild(row);
+  });
+  diagnosticsContent.appendChild(heading);
+  diagnosticsContent.appendChild(list);
+}
+
+function renderDiagnostics(data) {
+  if (!diagnosticsContent) return;
+  diagnosticsContent.innerHTML = "";
+  const snapshot = data && typeof data === "object" ? data : {};
+  appendDiagnosticGroup("Current activity", snapshot.gauges || {});
+  appendDiagnosticGroup("Session totals", snapshot.counters || {});
+  const roots = Array.isArray(snapshot.roots) ? snapshot.roots : [];
+  appendDiagnosticGroup("Library roots", Object.fromEntries(roots.map((root) => [root.id, root.status])));
+  const events = Array.isArray(snapshot.events) ? snapshot.events.slice(-12).reverse() : [];
+  appendDiagnosticGroup("Recent events", Object.fromEntries(events.map((entry, index) => [
+    `${index + 1}. ${entry.category}`,
+    `${entry.code}${Number.isFinite(entry.durationMs) ? ` · ${entry.durationMs} ms` : ""}`,
+  ])));
+  if (diagnosticsContent.children.length === 0) diagnosticsContent.textContent = "No diagnostic activity yet.";
 }
 
 const mediaPreview = QuickFoldersMediaPreview.create({
@@ -110,6 +378,25 @@ const mediaPreview = QuickFoldersMediaPreview.create({
   getPreferences: () => currentPreferences,
 });
 const browseModel = QuickFoldersBrowseModel.create({ maxSearchResults: MAX_RENDERED_SEARCH_RESULTS });
+const itemCollection = QuickFoldersItemCollection.create({
+  container: itemListEl,
+  layout: currentLayout,
+  schedule: requestAnimationFrame,
+  createItem(item, _index, layout) {
+    return QuickFoldersItemView.create(item, {
+      ...currentItemViewOptions,
+      focusedPath,
+      layout,
+      selectedPaths,
+    });
+  },
+  onBeforeRender() {
+    mediaPreview.beginRender({ preservePending: true });
+  },
+  onRender() {
+    requestAnimationFrame(() => mediaPreview.requestVisible());
+  },
+});
 const interactions = QuickFoldersInteractions.create({
   sendMessage: QuickFoldersMessaging.send,
   resetBrowseContext() {
@@ -135,6 +422,9 @@ const queueController = QuickFoldersQueueController.create({
   sendMessage: QuickFoldersMessaging.send,
   onOpenChange(open) {
     if (responsiveLayout) responsiveLayout.noteManualQueueChange();
+    // At wide widths the queue participates in flex layout, so opening it can
+    // change grid column geometry without producing a window resize event.
+    requestAnimationFrame(() => itemCollection.render());
     QuickFoldersMessaging.send("queue-panel-open", {
       open,
       resize: !responsiveLayout || !responsiveLayout.isWide(),
@@ -175,6 +465,113 @@ const helpDialog = QuickFoldersDialogs.create({
   inertTarget: appShell,
   toggleKey: "?",
 });
+const commandDialog = QuickFoldersDialogs.create({
+  element: commandModal,
+  trigger: commandBtn,
+  initialFocus: commandInput,
+  inertTarget: appShell,
+});
+const diagnosticsDialog = QuickFoldersDialogs.create({
+  element: diagnosticsModal,
+  initialFocus: closeDiagnosticsBtn,
+  closeButtons: [closeDiagnosticsBtn],
+  inertTarget: appShell,
+});
+
+function getCommandContext() {
+  const selected = getSelectedItems();
+  return {
+    availableViews: ["continue", "series", "recent", "unwatched", "watched"],
+    availableMediaTypes: getContextOptions().availableMediaTypes,
+    recentLocations: currentBrowserContext.recentLocations,
+    canGoBack: !currentState.atRoot,
+    hasQuery: Boolean(currentSearchQuery),
+    isIndexing: Boolean(currentState.isIndexing),
+    filter: currentFilter,
+    layout: currentLayout,
+    selectionCount: selected.length,
+    selectionAllWatched: selected.length > 0 && selected.every((item) => item.watched),
+    queueOpen: queueController.isOpen(),
+    queueCount: Array.isArray(currentState.queueItems) ? currentState.queueItems.length : 0,
+  };
+}
+
+function openSmartView(view) {
+  QuickFoldersMessaging.send("open-item", {
+    path: `@view/${view}`,
+    isDir: true,
+    isSmartView: true,
+    smartView: view,
+  });
+}
+
+function openRecentLocation(index) {
+  const location = currentBrowserContext.recentLocations[index];
+  if (!location) return;
+  if (location.kind === "folder") QuickFoldersMessaging.send("navigate-to", { path: location.path });
+  else if (location.kind === "smart") openSmartView(location.viewId);
+}
+
+function setFileFilter(filter) {
+  if (filter === currentFilter) return;
+  clearSelection(false);
+  currentFilter = filter;
+  filterDropdown.value = filter;
+  renderItems();
+  scheduleContextSave();
+}
+
+const commandRegistry = QuickFoldersCommands.create({
+  handlers: {
+    "navigation.root": () => QuickFoldersMessaging.send("go-root"),
+    "navigation.back": () => interactions.goBack(),
+    "navigation.continue-watching": () => openSmartView("continue"),
+    "navigation.recently-added": () => openSmartView("recent"),
+    "navigation.continue-series": () => openSmartView("series"),
+    "navigation.unwatched": () => openSmartView("unwatched"),
+    "navigation.watched": () => openSmartView("watched"),
+    "browse.focus-search": () => setTimeout(() => searchInput.focus(), 0),
+    "browse.clear-search": () => setTimeout(() => resetSearch({ focus: true, render: true }), 0),
+    "browse.refresh": () => QuickFoldersMessaging.send("refresh-index"),
+    "folder.add": () => QuickFoldersMessaging.send("add-folder"),
+    "filter.all": () => setFileFilter("all"),
+    "filter.video": () => setFileFilter("video"),
+    "filter.audio": () => setFileFilter("audio"),
+    "filter.image": () => setFileFilter("image"),
+    "layout.list": () => setLayout("list"),
+    "layout.grid": () => setLayout("grid"),
+    "selection.queue": addSelectedToQueue,
+    "selection.toggle-watched": setSelectedWatched,
+    "selection.delete": () => setTimeout(showDeleteConfirmation, 0),
+    "selection.clear": () => clearSelection(),
+    "queue.open": () => queueController.setOpen(true),
+    "queue.close": () => queueController.setOpen(false),
+    "queue.play": () => QuickFoldersMessaging.send("queue-play"),
+    "help.open": () => setTimeout(() => helpDialog.open(), 0),
+    "diagnostics.open": () => {
+      setTimeout(() => {
+        diagnosticsDialog.open();
+        QuickFoldersMessaging.send("request-diagnostics");
+      }, 0);
+    },
+    ...Object.fromEntries(Array.from({ length: 5 }, (_entry, index) => [
+      `navigation.recent-location-${index + 1}`,
+      () => openRecentLocation(index),
+    ])),
+  },
+});
+const commandPalette = QuickFoldersCommandPalette.create({
+  element: commandModal,
+  input: commandInput,
+  list: commandList,
+  empty: commandEmpty,
+  registry: commandRegistry,
+  getContext: getCommandContext,
+  dialog: commandDialog,
+});
+commandModal.addEventListener("click", (event) => {
+  if (event.target === commandModal) commandPalette.close();
+});
 
 function setIndexingUi(isBuilding) {
   spinnerContainer.classList.toggle("hidden", !isBuilding);
@@ -209,21 +606,77 @@ function handleIndexComplete() {
 }
 
 function getLocationKey(state) {
-  return `${state.currentPath || ""}:${Boolean(state.viewingWatched)}`;
+  return `${state.currentPath || ""}:${state.currentView || (state.viewingWatched ? "watched" : "")}`;
 }
 
 function handleStateUpdate(state) {
   const nextState = state || { items: [], atRoot: true };
   if (getLocationKey(currentState) !== getLocationKey(nextState)) clearSelection(false);
   currentState = nextState;
+  if (restoreNavigationPending) {
+    const restoredLocation = currentBrowserContext.location;
+    const reachedRestoredLocation = (
+      restoredLocation.kind === "folder" && nextState.currentPath === restoredLocation.path
+    ) || (
+      restoredLocation.kind === "smart" && nextState.currentView === restoredLocation.viewId
+    );
+    if (reachedRestoredLocation) {
+      restoreNavigationPending = false;
+      if (restoreNavigationFallbackTimer) clearTimeout(restoreNavigationFallbackTimer);
+      restoreNavigationFallbackTimer = null;
+    }
+  }
   availableExtensions = nextState.availableExtensions || [];
   browseModel.updateIndex(nextState.indexedFiles, nextState.indexRevision);
   if (nextState.preferences) currentPreferences = { ...currentPreferences, ...nextState.preferences };
+  if (!didRestoreBrowserContext) {
+    const restored = QuickFoldersBrowserContext.deserialize(nextState.browserContext, getContextOptions());
+    currentBrowserContext = restored;
+    currentSearchQuery = restored.query;
+    compiledSearchQuery = QuickFoldersSearch.compileQuery(currentSearchQuery);
+    searchInput.value = currentSearchQuery;
+    currentFilter = restored.filter;
+    pendingScrollAnchor = restored.scrollAnchor;
+    pendingFocusedPath = restored.focusedPath;
+    setLayout(restored.layout, { persist: false });
+    updateClearSearchButton();
+    renderSearchAssists();
+    didRestoreBrowserContext = true;
+  }
   queueController.setItems(nextState.queueItems || []);
   updateHelpShortcuts();
   setIndexingUi(Boolean(nextState.isIndexing));
   populateExtensionDropdown();
   renderItems();
+  if (pendingScrollAnchor && itemCollection.restoreAnchor(pendingScrollAnchor)) pendingScrollAnchor = null;
+  if (pendingFocusedPath && visibleItems.some((item) => item.path === pendingFocusedPath)) {
+    focusedPath = pendingFocusedPath;
+    itemCollection.focusPath(pendingFocusedPath);
+    pendingFocusedPath = null;
+  } else if (restoreNavigationSent && !restoreNavigationPending) {
+    pendingFocusedPath = null;
+  }
+  if (!restoreNavigationSent && currentBrowserContext.location.kind !== "root") {
+    restoreNavigationSent = true;
+    restoreNavigationPending = true;
+    restoreNavigationFallbackTimer = setTimeout(() => {
+      restoreNavigationFallbackTimer = null;
+      restoreNavigationPending = false;
+      pendingFocusedPath = null;
+      scheduleContextSave();
+    }, 1000);
+    if (currentBrowserContext.location.kind === "folder") {
+      QuickFoldersMessaging.send("navigate-to", { path: currentBrowserContext.location.path });
+    } else {
+      QuickFoldersMessaging.send("open-item", {
+        path: `@view/${currentBrowserContext.location.viewId}`,
+        isDir: true,
+        isSmartView: true,
+        smartView: currentBrowserContext.location.viewId,
+      });
+    }
+  }
+  scheduleContextSave();
   messageReceived = true;
 }
 
@@ -238,6 +691,16 @@ function populateExtensionDropdown() {
     availableExtensions,
     currentPreferences
   );
+  [
+    [videoFilterOption, extensionGroups.video],
+    [audioFilterOption, extensionGroups.audio],
+    [imageFilterOption, extensionGroups.image],
+  ].forEach(([option, extensions]) => {
+    if (!option) return;
+    const unavailable = extensions.length === 0;
+    option.disabled = unavailable;
+    option.hidden = unavailable;
+  });
   // Replacing options while WebKit's native menu is open dismisses it. State
   // updates are frequent, so rebuild only when the available choices change.
   const optionsKey = JSON.stringify(extensionGroups);
@@ -287,10 +750,7 @@ function refreshSelectionPresentation() {
     const selected = selectedPaths.has(item.path);
     row.classList.toggle("selected", selected);
     row.setAttribute("aria-selected", String(selected));
-    row.setAttribute(
-      "aria-label",
-      `${QuickFoldersView.getDisplayName(item)}, ${selected ? "selected" : "not selected"}`,
-    );
+    row.setAttribute("aria-label", QuickFoldersItemView.getAriaLabel(item, selected));
     const indicator = row.querySelector(".selection-indicator");
     if (indicator) indicator.title = selected ? "Deselect file" : "Select file";
   });
@@ -319,13 +779,7 @@ function selectItem(item, event, behavior = {}) {
 }
 
 function focusItem(path) {
-  const rows = itemListEl.querySelectorAll(".row[data-path]");
-  const row = Array.from(rows).find((candidate) => candidate.dataset.path === path);
-  if (!row) return;
-  rows.forEach((candidate) => {
-    candidate.tabIndex = candidate === row ? 0 : -1;
-  });
-  row.focus();
+  itemCollection.focusPath(path);
 }
 
 function focusBrowseList() {
@@ -338,7 +792,9 @@ function focusBrowseList() {
 
 function moveItemFocus(item, key, { extendSelection = false } = {}) {
   const currentPath = item && item.path ? item.path : focusedPath;
-  const target = QuickFoldersInteractions.getNavigationTarget(renderedItems, currentPath, key);
+  const target = currentPath
+    ? itemCollection.moveFocus(currentPath, key, { focus: false })
+    : renderedItems[0];
   if (!target) return false;
 
   if (extendSelection && !target.isDir) {
@@ -384,7 +840,14 @@ function updateActionBar() {
   if (!actionBar) return;
   const items = getSelectedItems();
   const hasSelection = items.length > 0;
+  const wasHidden = actionBar.classList.contains("hidden");
   actionBar.classList.toggle("hidden", !hasSelection);
+  if (wasHidden === hasSelection) {
+    requestAnimationFrame(() => {
+      itemCollection.render();
+      if (focusedPath) itemCollection.focusPath(focusedPath, { focus: false });
+    });
+  }
   if (!hasSelection) return;
 
   selectionCount.textContent = `${items.length} selected`;
@@ -529,7 +992,9 @@ function resetSearch({ focus = false, render = false } = {}) {
     if (focus) searchInput.focus();
   }
   updateClearSearchButton();
+  renderSearchAssists();
   if (render) renderItems();
+  scheduleContextSave();
 }
 
 function appendBreadcrumbSeparator() {
@@ -597,15 +1062,19 @@ function drawBreadcrumbSegments(segments) {
 function renderBreadcrumb() {
   breadcrumb.innerHTML = "";
   breadcrumb.title = "";
-  breadcrumb.classList.toggle("breadcrumb-root", currentState.atRoot || currentState.viewingWatched);
+  breadcrumb.classList.toggle("breadcrumb-root", currentState.atRoot || Boolean(currentState.currentView));
 
   if (currentState.atRoot) {
     breadcrumb.textContent = "Quick Folders";
     return;
   }
-  if (currentState.viewingWatched) {
-    breadcrumb.textContent = "Watched";
-    breadcrumb.title = "Watched media";
+  if (currentState.currentView || currentState.viewingWatched) {
+    const label = currentState.currentViewTitle || "Watched";
+    const current = document.createElement("span");
+    current.className = "breadcrumb-current";
+    current.textContent = label;
+    breadcrumb.appendChild(current);
+    breadcrumb.title = `${label} media`;
     return;
   }
 
@@ -624,8 +1093,8 @@ function appendEmptyMessage(message) {
   itemListEl.appendChild(element);
 }
 
-function renderItems() {
-  mediaPreview.beginRender();
+function renderItems({ preservePending = false } = {}) {
+  mediaPreview.beginRender({ preservePending });
   const browseResult = browseModel.getItems({
     state: currentState,
     query: currentSearchQuery,
@@ -640,7 +1109,6 @@ function renderItems() {
   if (selectionAnchorPath && !selectablePaths.has(selectionAnchorPath)) selectionAnchorPath = null;
   if (focusedPath && !filteredItems.some((item) => item.path === focusedPath)) focusedPath = null;
 
-  itemListEl.innerHTML = "";
   updateActionBar();
 
   // Update back button
@@ -658,6 +1126,8 @@ function renderItems() {
 
   if (filteredItems.length === 0) {
     renderedItems = [];
+    currentItemViewOptions = null;
+    itemCollection.setItems([], { preserveAnchor: false });
     appendEmptyMessage(QuickFoldersView.getEmptyMessage({
       state: currentState,
       query: currentSearchQuery,
@@ -667,18 +1137,13 @@ function renderItems() {
     return;
   }
 
-  if (browseResult.totalIndexedMatches > MAX_RENDERED_SEARCH_RESULTS) {
-    const resultsSummary = document.createElement("div");
-    resultsSummary.className = "results-summary";
-    resultsSummary.textContent = `Showing the top ${MAX_RENDERED_SEARCH_RESULTS.toLocaleString()} of ${browseResult.totalIndexedMatches.toLocaleString()} file matches`;
-    itemListEl.appendChild(resultsSummary);
-  }
-
-  const groupedItems = QuickFoldersBrowseState.partitionWatched(filteredItems);
-  const orderedItems = groupedItems.active.concat(groupedItems.watched);
+  const groupedItems = currentState.currentView
+    ? null
+    : QuickFoldersBrowseState.partitionWatched(filteredItems);
+  const orderedItems = groupedItems ? groupedItems.active.concat(groupedItems.watched) : filteredItems;
   renderedItems = orderedItems;
-  const fragment = document.createDocumentFragment();
-  const itemViewOptions = {
+  if (!focusedPath && orderedItems[0]) focusedPath = orderedItems[0].path;
+  currentItemViewOptions = {
     atRoot: currentState.atRoot,
     hasSearchQuery: Boolean(currentSearchQuery),
     mediaPreview,
@@ -696,8 +1161,11 @@ function renderItems() {
     onFocusItem(item) {
       focusedPath = item.path;
       itemListEl.querySelectorAll(".row[data-path]").forEach((row) => {
-        row.tabIndex = row.dataset.path === focusedPath ? 0 : -1;
+        const isFocused = row.dataset.path === focusedPath;
+        row.tabIndex = isFocused ? 0 : -1;
+        row.classList.toggle("focused", isFocused);
       });
+      scheduleContextSave();
     },
     onMoveFocus: moveItemFocus,
     onSelectFile: selectItem,
@@ -714,21 +1182,7 @@ function renderItems() {
       queueController.endExternalDrag();
     },
   };
-
-  orderedItems.forEach((item, itemIndex) => {
-    if (
-      item.watched &&
-      !currentState.viewingWatched &&
-      (itemIndex === 0 || !orderedItems[itemIndex - 1].watched)
-    ) {
-      const sectionEl = document.createElement("div");
-      sectionEl.className = "section-label";
-      sectionEl.textContent = `Watched · ${groupedItems.watched.length}`;
-      fragment.appendChild(sectionEl);
-    }
-    fragment.appendChild(QuickFoldersItemView.create(item, itemViewOptions));
-  });
-  itemListEl.appendChild(fragment);
+  itemCollection.setItems(orderedItems);
   // IINA can reopen this WebView after it was hidden for playback. WebKit does
   // not always deliver a fresh IntersectionObserver callback on that resume,
   // so explicitly sample only the visible/preload region after layout.
@@ -768,14 +1222,24 @@ if (helpBtn) {
     helpDialog.open();
   });
 }
+if (commandBtn) commandBtn.addEventListener("click", () => commandPalette.show());
+if (listLayoutBtn) listLayoutBtn.addEventListener("click", () => setLayout("list"));
+if (gridLayoutBtn) gridLayoutBtn.addEventListener("click", () => setLayout("grid"));
+if (closeDiagnosticsBtn) closeDiagnosticsBtn.addEventListener("click", () => diagnosticsDialog.close());
+if (resetPreviewCachesBtn) {
+  resetPreviewCachesBtn.addEventListener("click", () => QuickFoldersMessaging.send("reset-preview-caches"));
+}
 
 // Search input handler
 if (searchInput) {
   searchInput.addEventListener("input", (e) => {
+    suppressSearchSuggestions = false;
     clearSelection(false);
     currentSearchQuery = e.target.value;
     updateClearSearchButton();
     compiledSearchQuery = QuickFoldersSearch.compileQuery(currentSearchQuery);
+    renderSearchAssists();
+    scheduleContextSave();
     if (searchRenderTimer) clearTimeout(searchRenderTimer);
     searchRenderTimer = setTimeout(() => {
       searchRenderTimer = null;
@@ -783,6 +1247,14 @@ if (searchInput) {
     }, 60);
   });
   searchInput.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" && searchSuggestions && !searchSuggestions.classList.contains("hidden")) {
+      const firstSuggestion = searchSuggestions.querySelector("button");
+      if (firstSuggestion) {
+        event.preventDefault();
+        firstSuggestion.focus();
+        return;
+      }
+    }
     if (event.key !== "Enter" || event.isComposing) return;
     event.preventDefault();
     if (searchRenderTimer) {
@@ -792,6 +1264,17 @@ if (searchInput) {
     }
     searchInput.blur();
     focusBrowseList();
+  });
+  searchInput.addEventListener("focus", () => {
+    suppressSearchSuggestions = false;
+    renderSearchAssists();
+  });
+  searchInput.addEventListener("blur", () => setTimeout(renderSearchAssists, 0));
+}
+if (searchControl) {
+  searchControl.addEventListener("focusout", (event) => {
+    if (event.relatedTarget && searchControl.contains(event.relatedTarget)) return;
+    setTimeout(hideSearchSuggestions, 0);
   });
 }
 
@@ -807,6 +1290,7 @@ if (filterDropdown) {
   const applyFilter = (event) => {
     const nextFilter = event.currentTarget.value;
     interactions.applyFilter(nextFilter, currentFilter);
+    scheduleContextSave();
   };
   // WebKit versions differ on whether native select commits arrive as input,
   // change, or both. The idempotent handler supports each behavior.
@@ -823,7 +1307,18 @@ if (confirmDeleteBtn) {
 }
 
 document.addEventListener("keydown", (event) => {
-  if (deleteDialog.handleKeydown(event) || helpDialog.handleKeydown(event)) return;
+  if (
+    deleteDialog.handleKeydown(event)
+    || helpDialog.handleKeydown(event)
+    || commandDialog.handleKeydown(event)
+    || diagnosticsDialog.handleKeydown(event)
+  ) return;
+
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    commandPalette.show();
+    return;
+  }
 
   const target = event.target;
   if (target && target.closest && target.closest("#queue-panel")) return;
@@ -899,15 +1394,22 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+itemListEl.addEventListener("scroll", scheduleContextSave);
+window.addEventListener("resize", () => {
+  if (visibleItems.length === 0) renderItems({ preservePending: true });
+  else itemCollection.render();
+});
+window.addEventListener("beforeunload", () => QuickFoldersMessaging.send("window-closed"));
+
 
 registerBackendMessages();
 
 // Request initial state from main.js
-QuickFoldersMessaging.send("request-state");
+QuickFoldersMessaging.send("request-state", { indexRevision: currentState.indexRevision });
 
 // Also request state after a delay to ensure we get updates
 setTimeout(() => {
-  QuickFoldersMessaging.send("request-state");
+  QuickFoldersMessaging.send("request-state", { indexRevision: currentState.indexRevision });
 }, 500);
 
 // Render initial empty state

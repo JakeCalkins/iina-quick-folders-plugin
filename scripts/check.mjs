@@ -8,10 +8,13 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // manifest and every manifest-relative runtime path must remain rooted here.
 const pluginRoot = repositoryRoot;
 const failures = [];
+const ignoredDirectories = new Set([
+  ".git", "blob-report", "dist", "node_modules", "playwright-report", "test-results",
+]);
 
 function walk(directory, predicate) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    if (entry.name === ".git" || entry.name === "node_modules" || entry.name === "dist") return [];
+    if (ignoredDirectories.has(entry.name)) return [];
     const path = join(directory, entry.name);
     return entry.isDirectory() ? walk(path, predicate) : predicate(path) ? [path] : [];
   });

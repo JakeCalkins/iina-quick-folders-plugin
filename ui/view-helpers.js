@@ -80,6 +80,16 @@ const QuickFoldersView = (() => {
   function getEmptyMessage({ state, query, filter, preferences }) {
     const currentState = state || {};
     if (!Array.isArray(currentState.items) || currentState.items.length === 0) {
+      const smartEmptyMessages = {
+        continue: "Nothing in progress yet",
+        series: "No next episodes available",
+        recent: "No newly discovered media yet",
+        unwatched: "Everything here is watched",
+        watched: "No watched items",
+      };
+      if (currentState.currentView && smartEmptyMessages[currentState.currentView]) {
+        return smartEmptyMessages[currentState.currentView];
+      }
       if (currentState.viewingWatched) return "No watched items";
       return currentState.atRoot ? "No folders added yet" : "Empty folder";
     }

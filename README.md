@@ -30,25 +30,30 @@ See the [installation guide](docs/INSTALLATION.md) for upgrades, uninstalling, d
 
 1. Press `⌘ ⇧ K` while IINA is active to open Quick Folders.
 2. Press `N` or choose **Add Folder**, then select a media folder.
-3. Browse the folder or use search and the file-type filter.
+3. Browse a folder, open a smart view, or use search and the file-type filter.
 4. Click a file to play it. Use `⌘`/`Ctrl`-click, Shift-click, or the row's selection control to build a selection for bulk actions.
 5. Drag one file—or a multi-selection—onto the queue button in the bottom bar. Open the queue to reorder it, then choose **Watch Queue** to open an ordered native IINA playlist containing only those files.
 
-Open **IINA → Settings → Plugins → Quick Folders → Settings** to change shortcuts, media filters, watched-file behavior, optional bitrate chips, and indexing depth.
+Open **IINA → Settings → Plugins → Quick Folders → Settings** to change shortcuts, media filters, the playback-completion threshold, optional bitrate chips, and indexing depth.
 
 ## Features
 
 - User-defined media roots with nested-folder navigation
-- Fast fuzzy search across the configured index
+- Cache-first startup followed by background, per-root index reconciliation
+- Fast fuzzy and structured search across the configured index, with inline suggestions and removable filter chips
+- Continue Watching, Continue Series, Recently Added, Unwatched, and optional Watched smart views
+- Persistent local playback progress, completion state, and conservative resume that defers to IINA's native resume position
+- List and poster-grid layouts with windowed rendering for libraries of 100,000 items
 - Video, audio, image, and extension filters
 - Lazy native thumbnails, generated fallbacks, and optional local `ffmpeg` previews for non-native media
 - Priority-aware duration, resolution, codec, sample-rate, channel, type, and file-size chips, with optional bitrate chips
 - Modifier, range, keyboard, and select-all multi-selection behavior
 - Persistent drag-and-drop queue with bucket and expanded-pane drop targets, multi-item reordering, and native IINA playlist playback
-- Bulk watched/unwatched actions and an optional Watched folder
+- Bulk watched/unwatched actions that override automatic completion until explicitly changed
 - Move selected files to Trash with confirmation
 - Light/dark appearance and reduced-motion support
-- Built-in keyboard shortcut reference with `?`
+- Searchable command palette with `⌘`/`Ctrl K`, plus a keyboard shortcut reference with `?`
+- Privacy-safe, in-memory diagnostics with counts and categorized events only
 
 ## Keyboard shortcuts
 
@@ -56,6 +61,7 @@ Open **IINA → Settings → Plugins → Quick Folders → Settings** to change 
 | --- | --- |
 | `⌘ ⇧ K` | Open Quick Folders (configurable) |
 | `N` | Add a folder (configurable) |
+| `⌘/Ctrl K` | Open the command palette |
 | `/` or `⌘/Ctrl F` | Focus search |
 | `Return` in search | Finish searching and move focus into the results |
 | `↑` / `↓` | Move focus through folders and media |
@@ -79,8 +85,13 @@ Search is fuzzy by default, so abbreviations and small typos can still match. Cl
 - `summer*.mp4` and `clip-??.mov` use wildcards
 - `summer -draft` excludes `draft`
 - `ext:mp4`, `ext:m*`, and `-ext:mov` filter extensions
+- `is:new`, `is:progress`, `is:watched`, and `is:unwatched` filter playback state
+- `duration:>20m` and `resolution:>=1080p` compare media details when available
+- `added:>=2026-09-01` filters by the date Quick Folders first observed a file
+- `folder:"Documentaries"` narrows results by containing folder
 
 Multiple positive `ext:` clauses are alternatives; other positive clauses must all match.
+**Recently Added** and `added:` use first-seen time, because IINA's plugin filesystem API does not expose a portable creation date. Duration and resolution clauses become available as local metadata is inspected and cached.
 
 ## Development
 
@@ -89,6 +100,8 @@ The repository has no runtime npm dependencies. Node.js 20+ provides the test an
 ```sh
 git clone https://github.com/JakeCalkins/iina-quick-folders-plugin.git
 cd iina-quick-folders-plugin
+npm ci
+npx playwright install webkit
 npm run verify
 ```
 
@@ -102,7 +115,7 @@ Release history and pending changes are maintained in [CHANGELOG.md](CHANGELOG.m
 - Use the repository’s structured [issue forms](https://github.com/JakeCalkins/iina-quick-folders-plugin/issues/new/choose) for bugs and features.
 - Report security-sensitive problems according to [SECURITY.md](SECURITY.md), not in a public issue.
 
-Quick Folders works with local paths you choose and requires IINA’s filesystem permission. It does not request network access or persist diagnostic logs containing media paths. File-removal actions move items to Trash and always require confirmation.
+Quick Folders works with local paths you choose and requires IINA’s filesystem permission. For safety, folder roots and media reached through symbolic links are rejected; add the physical folder instead. It does not request network access. Its diagnostics are memory-only and accept only enumerated categories and numeric measurements—never media paths or filenames. File-removal actions move items to Trash and always require confirmation.
 
 ## License
 

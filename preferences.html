@@ -54,6 +54,16 @@
 
     <div class="pref-section">
       <label>
+        Mark playback complete at
+        <input type="number" data-type="int" data-pref-key="completionThreshold" min="50" max="100" style="width: 60px; margin-left: 8px;" />%
+      </label>
+      <p class="small secondary pref-help">
+        Playback at or above this percentage is treated as watched unless you explicitly marked the file unwatched.
+      </p>
+    </div>
+
+    <div class="pref-section">
+      <label>
         <input type="checkbox" data-type="bool" data-pref-key="showBitrateChips" />
         Show bitrate chips
       </label>

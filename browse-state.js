@@ -68,6 +68,11 @@ const QuickFoldersBrowseState = (() => {
 
   function reconcileExtensionFilter(currentFilter, groups) {
     if (currentFilter === "all") return "all";
+    if (["video", "audio", "image"].includes(currentFilter)) {
+      return Array.isArray(groups && groups[currentFilter]) && groups[currentFilter].length > 0
+        ? currentFilter
+        : "all";
+    }
     const availableFilters = new Set();
     Object.keys(groups || {}).forEach((group) => {
       (groups[group] || []).forEach((extension) => availableFilters.add(`ext:${extension}`));

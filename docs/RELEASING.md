@@ -1,6 +1,6 @@
 # Release process
 
-Releases are built and published by GitHub Actions. The release workflow tests the tagged source, validates version metadata, builds the package without downloading IINA, publishes a checksum, creates a provenance attestation, and generates categorized GitHub release notes.
+Releases are built and published by GitHub Actions. A read-only validation job tests the tagged source, validates version metadata, and builds the package without downloading IINA. Only its dependent publishing job receives release and attestation permissions; it revalidates the transferred package, publishes the checksum and provenance attestation, and generates categorized GitHub release notes.
 
 ## Prepare a release
 

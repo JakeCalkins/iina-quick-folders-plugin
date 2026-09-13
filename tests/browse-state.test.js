@@ -68,6 +68,12 @@ test("keeps an available filter across option rebuilds and resets stale filters"
   assert.equal(browseState.reconcileExtensionFilter("all", groups), "all");
 });
 
+test("keeps available media-type filters for command-palette filtering", () => {
+  const groups = { video: ["mp4"], audio: [], image: ["jpg"] };
+  assert.equal(browseState.reconcileExtensionFilter("video", groups), "video");
+  assert.equal(browseState.reconcileExtensionFilter("audio", groups), "all");
+});
+
 test("file filters preserve folder navigation and match extensions case-insensitively", () => {
   const classify = (extension) => extension === "mp3" ? "audio" : "video";
   assert.equal(browseState.matchesFileFilter({ name: "Subfolder", isDir: true }, "ext:mp4", classify), true);

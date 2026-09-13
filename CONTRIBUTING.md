@@ -14,8 +14,8 @@ Thanks for improving Quick Folders. Small, focused changes with clear test evide
 
 Requirements:
 
-- macOS with IINA 1.4.0 or later for integration testing
-- Node.js 20 or later for validation and unit tests
+- macOS with IINA 1.4.0 or later for native integration testing
+- Node.js 20 or later for validation and automated tests
 - `zip` and `unzip` for local packaging
 
 Clone and verify the repository:
@@ -23,10 +23,12 @@ Clone and verify the repository:
 ```sh
 git clone https://github.com/JakeCalkins/iina-quick-folders-plugin.git
 cd iina-quick-folders-plugin
+npm ci
+npx playwright install webkit
 npm run verify
 ```
 
-No `npm install` step is required because the project has no npm dependencies.
+Playwright is a development-only dependency; the shipped IINA plugin has no runtime npm dependencies. The browser download is needed once per Playwright version.
 
 For live development, link the checkout with IINA's bundled plugin CLI:
 
@@ -40,14 +42,17 @@ The helper finds `iina-plugin` on `PATH` or inside `/Applications/IINA.app`; no 
 
 | Command | Purpose |
 | --- | --- |
-| `npm test` | Run the Node test suite |
+| `npm test` | Run the Node unit and integration suites |
+| `npm run test:integration` | Run cross-module workflow tests |
+| `npm run test:coverage` | Report Node unit and integration code coverage |
+| `npm run test:ui` | Run functional UI tests in Playwright WebKit |
 | `npm run check` | Check JavaScript syntax, the plugin manifest, browser references, documentation links, agent references, and high-confidence privacy patterns |
 | `npm run package` | Build a tested `.iinaplgz` and SHA-256 checksum in `dist/` |
-| `npm run verify` | Run all static checks, tests, and packaging |
+| `npm run verify` | Run all static checks, Node and UI tests, and packaging |
 | `npm run dev:link` / `npm run dev:unlink` | Add or remove the development plugin in IINA |
 | `npm run release:prepare -- 2.3.0` | Update the manifest and promote Unreleased changelog notes for a release |
 
-CI runs the checks on Node 20 and Node 24 for every pull request and push to `main`. Successful CI runs also expose a short-lived installable package under **Actions → run → Artifacts**.
+CI runs the Node suites on Node 20 and Node 24 plus the functional UI suite in WebKit for every pull request and push to `main`. Successful CI runs also expose a short-lived installable package under **Actions → run → Artifacts**; failed UI runs retain Playwright traces and screenshots.
 
 ## Code organization
 
@@ -89,6 +94,8 @@ Choose the relevant scenarios for your change:
 - Test keyboard shortcuts, dialogs, focus restoration, and reduced motion
 - Confirm selection does not restart loaded thumbnails or metadata, and an unchanged queue update does not disturb focus or selection
 - Confirm the browser console and IINA logs contain no new errors
+
+Playwright covers deterministic DOM, keyboard, queue, search, dialog, and responsive behavior through an injected IINA message boundary. It does not replace the manual IINA pass for native-window embedding, filesystem dialogs, or playback.
 
 ## Pull request expectations
 
