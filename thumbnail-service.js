@@ -213,6 +213,10 @@ function createThumbnailGenerator(options) {
     const type = FileTypes.getFileTypeByExt(path);
     const fallback = createFallbackThumbnailDataUrl(type);
     if (!isValid(path)) return null;
+    const isAuthorized = typeof options.isAuthorized === "function"
+      ? options.isAuthorized
+      : async () => true;
+    if (!await isAuthorized(path)) return null;
     const useQuickLook = shouldUseQuickLook(path, type);
     const canExtractEmbeddedMedia = type === FileTypes.FILE_TYPES.VIDEO || type === FileTypes.FILE_TYPES.AUDIO;
     const frameTool = !useQuickLook && canExtractEmbeddedMedia ? findFfmpeg() : null;
@@ -231,6 +235,7 @@ function createThumbnailGenerator(options) {
 
       let imagePath = null;
       if (useQuickLook) {
+        if (!await isAuthorized(path)) return null;
         // Execute the fixed system path directly. Tool errors are expected on
         // unsupported formats and simply fall through to the next strategy.
         await execute(QUICK_LOOK_TOOL, [
@@ -245,6 +250,7 @@ function createThumbnailGenerator(options) {
         // the safe filename fixes the old root-directory read and traversal risk.
         imagePath = findGeneratedImage(fileApi, outputDirectory);
       } else if (frameTool) {
+        if (!await isAuthorized(path)) return null;
         const framePath = joinPath(outputDirectory, "media-preview.png");
         const seekArguments = type === FileTypes.FILE_TYPES.VIDEO ? ["-ss", "1"] : [];
         const frameResult = await execute(frameTool, [
@@ -271,6 +277,7 @@ function createThumbnailGenerator(options) {
       // Quick Look coverage varies by image codec. sips provides a lightweight
       // platform fallback which also bounds the decoded image sent to WebKit.
       if (!imagePath && type === FileTypes.FILE_TYPES.IMAGE) {
+        if (!await isAuthorized(path)) return null;
         const resizedPath = joinPath(outputDirectory, "image-fallback.png");
         await execute(IMAGE_RESIZE_TOOL, [
           "-s", "format", "png",

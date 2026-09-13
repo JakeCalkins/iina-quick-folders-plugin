@@ -115,7 +115,7 @@ Release history and pending changes are maintained in [CHANGELOG.md](CHANGELOG.m
 - Use the repository’s structured [issue forms](https://github.com/JakeCalkins/iina-quick-folders-plugin/issues/new/choose) for bugs and features.
 - Report security-sensitive problems according to [SECURITY.md](SECURITY.md), not in a public issue.
 
-Quick Folders works with local paths you choose and requires IINA’s filesystem permission. It does not request network access. Its diagnostics are memory-only and accept only enumerated categories and numeric measurements—never media paths or filenames. File-removal actions move items to Trash and always require confirmation.
+Quick Folders works with local paths you choose and requires IINA’s filesystem permission. For safety, folder roots and media reached through symbolic links are rejected; add the physical folder instead. It does not request network access. Its diagnostics are memory-only and accept only enumerated categories and numeric measurements—never media paths or filenames. File-removal actions move items to Trash and always require confirmation.
 
 ## License
 

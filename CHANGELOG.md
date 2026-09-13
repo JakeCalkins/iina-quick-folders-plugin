@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [3.0.0] - 2026-09-13
+
 ### Added
 - Added Playwright WebKit functional UI coverage and cross-module integration workflow tests
 - Added durable playback progress, configurable automatic completion, conservative resume, and Continue Watching
@@ -18,16 +22,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Split settings, playback history, browser context, and the versioned per-root index into independently migrated stores
+- Serialized shared-state mutations across IINA player instances and bounded/debounced lazy metadata persistence
 - Made startup publish compact navigation state immediately, then publish the cached search index and reconcile roots in the background while retaining unavailable-root results
 - Preserved lazily discovered duration and resolution metadata in the index and replaced thumbnails only after their new image is ready
 - Made index refreshes use per-root change markers to reconcile only changed directories when supported, with a safe full-scan fallback, atomic publication, and deduplicated concurrent refreshes
 - Added validated backup recovery for persisted JSON state
+- Split release validation from privileged publishing so third-party development dependencies never receive release credentials
 
 ### Fixed
 - Prevented a newly loaded title from overwriting the preceding title's progress during file transitions
 - Kept command-palette focus restoration from stealing focus from commands that open another dialog or focus search
 - Made the keyboard navigation cursor visibly follow the focused media row
 - Distinguished queue collapse from destructive remove controls, kept the drag-to-queue label unclipped, and removed stray outer window gutters
+- Kept search usable at 320×480, recalculated poster-grid geometry when the queue changes width, and cleared hidden search-suggestion focus state
+- Invalidated the index when scan preferences change and pruned ignored directory trees during incremental discovery
+- Accepted malformed window messages without throwing and removed deleted-root paths from playback data and recovery backups
+
+### Security
+- Revalidated every media path without symbolic-link components immediately before native tools, playback, queue construction, and Trash operations
 
 ## [2.7.0] - 2026-09-12
 

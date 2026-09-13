@@ -13,18 +13,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Validate and publish
+  validate:
+    name: Validate and package
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
-      contents: write
-      id-token: write
-      attestations: write
-      artifact-metadata: write
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Check out tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
@@ -71,21 +72,76 @@ jobs:
           retention-days: 7
       - name: Build release package and checksum
         run: npm run package
+      - name: Upload release package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: quick-folders-release-package
+          path: |
+            dist/*.iinaplgz
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Attest and publish
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+      - name: Download validated release package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: quick-folders-release-package
+          path: dist
+      - name: Verify transferred release package
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          archive="dist/quick-folders-v${VERSION}.iinaplgz"
+          checksum="${archive}.sha256"
+          source_version="$(node -p "require('./Info.json').version")"
+          package_version="$(unzip -p "$archive" Info.json | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).version")"
+
+          if [[ "$VERSION" != "$source_version" ]]; then
+            echo "Validated version $VERSION does not match source version $source_version" >&2
+            exit 1
+          fi
+          if [[ "$VERSION" != "$package_version" ]]; then
+            echo "Validated version $VERSION does not match package version $package_version" >&2
+            exit 1
+          fi
+
+          (cd dist && sha256sum -c "$(basename "$checksum")")
+          node scripts/verify-plugin-package.mjs "$archive"
       - name: Attest package provenance
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
-          subject-path: dist/*.iinaplgz
+          subject-path: dist/quick-folders-v${{ needs.validate.outputs.version }}.iinaplgz
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.validate.outputs.version }}
         run: bash scripts/publish-release.sh
       - name: Verify published package download
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
           verification_dir="$RUNNER_TEMP/quick-folders-release-$VERSION"
           mkdir -p "$verification_dir"

@@ -7,10 +7,12 @@ const FileTypes = require("./file-types.js");
 const IndexState = require("./index-state.js");
 const IncrementalIndexState = require("./incremental-index-state.js");
 const MediaMetadata = require("./media-metadata.js");
+const PathSecurity = require("./path-security.js");
 const PlaybackState = require("./playback-state.js");
 const QueuePlayback = require("./queue-playback.js");
 const QueueState = require("./queue-state.js");
 const SeriesState = require("./series-state.js");
+const SharedStateLock = require("./shared-state-lock.js");
 const ThumbnailService = require("./thumbnail-service.js");
 const KeyboardShortcuts = require("./ui/keyboard-shortcuts.js");
 const { createAsyncResourceLoader } = require("./async-resource-loader.js");
@@ -48,7 +50,8 @@ const BROWSER_WINDOW_WIDTH = 500;
 const QUEUE_WINDOW_WIDTH = 840;
 const WINDOW_HEIGHT = 600;
 const PROGRESS_WRITE_DELAY = 5000;
-const INDEX_METADATA_WRITE_DELAY = 1000;
+const INDEX_METADATA_WRITE_DELAY = 5000;
+const MAX_PENDING_INDEX_METADATA = MAX_MEDIA_METADATA_IN_MEMORY;
 const MAX_SMART_VIEW_ITEMS = 100;
 const hasOwn = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 
@@ -75,9 +78,19 @@ function isValidMediaPath(path) {
   return isPlayableFile(filename) && file.exists(path);
 }
 
+async function isAuthorizedPath(path) {
+  return PathSecurity.isPathWithinRootsWithoutSymlinks(path, folderRoots, utils);
+}
+
+async function isAuthorizedMediaPath(path) {
+  return isValidMediaPath(path) && await isAuthorizedPath(path);
+}
+
 async function readMediaMetadata(path) {
+  if (!await isAuthorizedMediaPath(path)) return null;
   let metadata = {};
   if (utils.fileInPath(METADATA_TOOL)) {
+    if (!await isAuthorizedMediaPath(path)) return null;
     const result = await executeMetadataTool(METADATA_TOOL, [
       "-name", "kMDItemDurationSeconds",
       "-name", "kMDItemPixelHeight",
@@ -98,6 +111,7 @@ async function readMediaMetadata(path) {
     || (fileType !== FILE_TYPES.IMAGE && (!metadata.codecs || metadata.codecs.length === 0));
   const probeTool = needsProbe ? getMediaProbeTool() : null;
   if (probeTool) {
+    if (!await isAuthorizedMediaPath(path)) return null;
     const result = await executeMetadataTool(probeTool, [
       "-v", "error",
       "-show_entries", "format=duration,bit_rate:stream=codec_type,codec_name,width,height,duration,bit_rate,sample_rate,channels",
@@ -155,6 +169,7 @@ const thumbnailLoader = ThumbnailService.createThumbnailService({
   concurrency: MAX_CONCURRENT_THUMBNAILS,
   maxEntries: MAX_THUMBNAILS_IN_MEMORY,
   isValid: isValidMediaPath,
+  isAuthorized: isAuthorizedMediaPath,
   onCacheHit: () => diagnostics.increment("cache.hits"),
   onCacheMiss: () => diagnostics.increment("cache.misses"),
   deliver: postGeneratedThumbnail,
@@ -170,7 +185,16 @@ const mediaMetadataLoader = createAsyncResourceLoader({
   deliver: postMediaMetadata,
 });
 
-const queuePlayback = QueuePlayback.create({ core, playlist });
+const queuePlayback = QueuePlayback.create({
+  core,
+  playlist,
+  authorize: isAuthorizedMediaPath,
+  authorizeAll: async (paths) => {
+    const requested = BrowseState.normalizePaths(paths);
+    const result = await partitionAuthorizedMediaPaths(requested);
+    return result.succeeded.length === requested.length;
+  },
+});
 
 function getPlayerLabel() {
   if (!globalApi || typeof globalApi.getLabel !== "function") return null;
@@ -182,6 +206,7 @@ function getPlayerLabel() {
 }
 
 const isManagedQueuePlayer = getPlayerLabel() === QUEUE_PLAYER_LABEL;
+const sharedStateLock = SharedStateLock.createClient(globalApi);
 
 function requestThumbnail(path) {
   if (!isValidMediaPath(path)) return;
@@ -226,6 +251,31 @@ function parseFindPaths(output, rootPath) {
     .split("\0")
     .map((path) => IncrementalIndexState.normalizeAbsolutePath(path))
     .filter((path) => path && IncrementalIndexState.isPathWithinRoot(path, rootPath));
+}
+
+function escapeFindPattern(value) {
+  return String(value).replace(/[\\*?\[\]]/g, "\\$&");
+}
+
+function getChangedPathFindArguments(rootPath, maxDepth, markerPath, type) {
+  const ignoredNames = [".*", "~*", ...Array.from(SKIP_DIRECTORIES).sort()];
+  const ignoredExpression = [];
+  ignoredNames.forEach((name, index) => {
+    if (index > 0) ignoredExpression.push("-o");
+    ignoredExpression.push("-name", name);
+  });
+  return [
+    rootPath,
+    "-maxdepth", String(maxDepth + 1),
+    "(",
+    "-type", "d",
+    "!", "-path", escapeFindPattern(rootPath),
+    "(", ...ignoredExpression, ")",
+    "-prune",
+    ")",
+    "-o",
+    "(", "-newer", markerPath, "-type", type, "-print0", ")",
+  ];
 }
 
 function getParentPath(path) {
@@ -294,13 +344,23 @@ async function discoverChangedDirectories(rootPath, previousRoot, marker, prefer
   ) return null;
   const markerPath = getIndexMarkerPath(rootPath, marker.previousSlot);
   try {
+    if (!await isAuthorizedPath(rootPath)) return null;
     if (!utils.fileInPath(FIND_TOOL)) return null;
     if (!file.exists(markerPath)) return null;
     const physicalMarkerPath = utils.resolvePath(markerPath);
-    const findPrefix = [rootPath, "-maxdepth", String(preferenceSnapshot.maxIndexDepth + 1)];
     const [directoriesResult, filesResult] = await Promise.all([
-      utils.exec(FIND_TOOL, [...findPrefix, "-newer", physicalMarkerPath, "-type", "d", "-print0"]),
-      utils.exec(FIND_TOOL, [...findPrefix, "-newer", physicalMarkerPath, "-type", "f", "-print0"]),
+      utils.exec(FIND_TOOL, getChangedPathFindArguments(
+        rootPath,
+        preferenceSnapshot.maxIndexDepth,
+        physicalMarkerPath,
+        "d",
+      )),
+      utils.exec(FIND_TOOL, getChangedPathFindArguments(
+        rootPath,
+        preferenceSnapshot.maxIndexDepth,
+        physicalMarkerPath,
+        "f",
+      )),
     ]);
     if (
       !directoriesResult || directoriesResult.status !== 0
@@ -356,6 +416,7 @@ async function listChangedDirectories(paths, { rootPath, previousFiles, maxDepth
   for (let index = 0; index < pending.length; index++) {
     const path = pending[index];
     try {
+      if (!await isAuthorizedPath(path)) return null;
       const entries = await file.list(path);
       if (!Array.isArray(entries)) return null;
       snapshots.push({ path, entries });
@@ -416,10 +477,12 @@ function scheduleWindowUpdate() {
   }, 40);
 }
 
-async function scanFolderForPlayable(folderPath, depth = 0) {
+async function scanFolderForPlayable(folderPath, depth = 0, { authorized = false } = {}) {
   if (depth > 10) return false;
   try {
+    if (!authorized && !await isAuthorizedPath(folderPath)) return false;
     const listing = file.list(folderPath, { includeSubDir: false }) || [];
+    const subdirs = [];
     for (let i = 0; i < listing.length; i++) {
       const item = listing[i];
       const itemName = item.filename || item.name;
@@ -430,7 +493,7 @@ async function scanFolderForPlayable(folderPath, depth = 0) {
       if (isDir) {
         if (SKIP_DIRECTORIES.has(itemName)) continue;
         const fullPath = item.path || (folderPath.endsWith("/") ? folderPath + itemName : folderPath + "/" + itemName);
-        if (await scanFolderForPlayable(fullPath, depth + 1)) return true;
+        subdirs.push(fullPath);
       } else if (isPlayableFile(itemName)) {
         return true;
       }
@@ -438,6 +501,14 @@ async function scanFolderForPlayable(folderPath, depth = 0) {
       if ((i + 1) % 200 === 0) {
         await new Promise(resolve => setTimeout(resolve, 0));
       }
+    }
+    const authorizedSubdirs = await PathSecurity.getPathsWithinRootsWithoutSymlinks(
+      subdirs,
+      folderRoots,
+      utils,
+    );
+    for (const subdir of authorizedSubdirs) {
+      if (await scanFolderForPlayable(subdir, depth + 1, { authorized: true })) return true;
     }
   } catch (err) {
     // Ignore scan errors
@@ -472,6 +543,9 @@ let currentPath = null;
 let history = [];
 let watchedPaths = new Set();
 let queuePaths = [];
+// Root/file membership changes advance this durable fence so background work
+// prepared by another player cannot publish an older view of the library.
+let libraryRevision = 0;
 let currentView = null;
 let browserContext = null;
 let stateLoaded = false;
@@ -480,6 +554,7 @@ let fileIndex = { extensions: new Set(), files: [] };
 let indexSnapshot = IndexState.createSnapshot();
 let indexSnapshotPrepared = true;
 let cachedIndexConfigCompatible = true;
+let indexLibraryRevision = 0;
 let playbackSnapshot = PlaybackState.normalizeSnapshot();
 const dirtyPlaybackPaths = new Set();
 let playbackRevision = 0;
@@ -493,6 +568,7 @@ let indexedItemPositions = new Map();
 const indexedRecordsByPath = new Map();
 const cachedChildrenByParent = new Map();
 const pendingIndexedMetadata = new Map();
+const dirtyPlaybackRevisions = new Map();
 let fileIndexRevision = 0;
 let publishedIndexRevision = null;
 let isIndexing = false;
@@ -500,6 +576,7 @@ let indexProgress = { filesProcessed: 0, totalEstimate: 0 };
 let activeIndexBuild = null;
 let rootGeneration = 0;
 let indexMetadataWriteTimer = null;
+let indexMetadataDirty = false;
 let deferredIndexTimer = null;
 let deferHeavyIndexWork = false;
 let windowIsOpen = false;
@@ -507,12 +584,50 @@ let diagnosticRootCount = 0;
 const forceFullScanRoots = new Set();
 const diagnostics = Diagnostics.create();
 
+function markPlaybackDirty(path, revision = libraryRevision) {
+  dirtyPlaybackPaths.add(path);
+  if (!dirtyPlaybackRevisions.has(path)) dirtyPlaybackRevisions.set(path, revision);
+}
+
 function scheduleIndexMetadataSave() {
-  if (indexMetadataWriteTimer) return;
+  if (indexMetadataWriteTimer) clearTimeout(indexMetadataWriteTimer);
   indexMetadataWriteTimer = setTimeout(() => {
     indexMetadataWriteTimer = null;
-    saveIndexSnapshot();
+    flushIndexMetadata();
   }, INDEX_METADATA_WRITE_DELAY);
+}
+
+async function flushIndexMetadata() {
+  if (indexMetadataWriteTimer) clearTimeout(indexMetadataWriteTimer);
+  indexMetadataWriteTimer = null;
+  if (!indexMetadataDirty) return true;
+  return sharedStateLock.withLock(() => {
+    if (!reloadSharedState()) return false;
+    const previousSnapshot = JSON.stringify(indexSnapshot);
+    const persisted = readJson(INDEX_FILE);
+    const currentConfigKey = getIndexConfigKey();
+    indexSnapshot = persisted && IndexState.isCompatible(persisted, currentConfigKey)
+      ? IndexState.normalizeSnapshot(persisted)
+      : IndexState.normalizeSnapshot(indexSnapshot);
+    indexSnapshot.configKey = currentConfigKey;
+    reconcileIndexRoots();
+    applyPendingIndexedMetadata(indexSnapshot);
+    if (JSON.stringify(indexSnapshot) !== previousSnapshot) rebuildFileIndexFromSnapshot();
+    const succeeded = saveIndexSnapshot();
+    if (succeeded) {
+      indexLibraryRevision = libraryRevision;
+      pendingIndexedMetadata.clear();
+      indexMetadataDirty = false;
+    }
+    return succeeded;
+  });
+}
+
+function rememberPendingIndexedMetadata(path, metadata) {
+  if (!pendingIndexedMetadata.has(path) && pendingIndexedMetadata.size >= MAX_PENDING_INDEX_METADATA) {
+    pendingIndexedMetadata.delete(pendingIndexedMetadata.keys().next().value);
+  }
+  pendingIndexedMetadata.set(path, metadata);
 }
 
 function mergeIndexedMetadata(path, metadata) {
@@ -539,7 +654,8 @@ function mergeIndexedMetadata(path, metadata) {
   if (snapshotItem) Object.assign(snapshotItem, normalized);
   if (!changed) return false;
 
-  pendingIndexedMetadata.set(path, normalized);
+  rememberPendingIndexedMetadata(path, normalized);
+  indexMetadataDirty = true;
   fileIndexRevision++;
   smartViewCacheKey = null;
   scheduleIndexMetadataSave();
@@ -613,6 +729,7 @@ async function runFileIndexBuild() {
   postWindowMessage("index-building", { progress: indexProgress });
 
   const rootPaths = folderRoots.map((root) => root.path);
+  const buildLibraryRevision = libraryRevision;
   for (let ordinal = rootPaths.length + 1; ordinal <= diagnosticRootCount; ordinal++) {
     diagnostics.removeRootStatus(ordinal);
   }
@@ -628,6 +745,11 @@ async function runFileIndexBuild() {
     Object.keys(candidateSnapshot.roots || {}).forEach((rootPath) => {
       if (!rootPaths.includes(rootPath)) candidateSnapshot = IndexState.removeRoot(candidateSnapshot, rootPath);
     });
+    if (!hasCompatibleIndexPreferences(candidateSnapshot.configKey, preferenceSnapshot)) {
+      rootPaths.forEach((rootPath) => {
+        candidateSnapshot = IndexState.markRootStale(candidateSnapshot, rootPath);
+      });
+    }
     candidateSnapshot.configKey = getIndexConfigKey(preferenceSnapshot);
     for (const rootPath of rootPaths) {
       const rootIndex = { extensions: new Set(), files: [] };
@@ -725,7 +847,7 @@ async function runFileIndexBuild() {
           }
           if (!stillExists && hasOwn(playbackSnapshot.records, path)) {
             delete playbackSnapshot.records[path];
-            dirtyPlaybackPaths.add(path);
+            markPlaybackDirty(path, buildLibraryRevision);
             playbackPruned = true;
           }
         });
@@ -739,25 +861,43 @@ async function runFileIndexBuild() {
       });
     }
     if (buildGeneration !== rootGeneration) return;
-    candidateSnapshot = mergeNewerPersistedIndex(candidateSnapshot, rootPaths);
-    applyPendingIndexedMetadata(candidateSnapshot);
-    const previousFiles = fileIndex.files;
-    indexSnapshot = candidateSnapshot;
-    rebuildFileIndexFromSnapshot();
-    pendingIndexedMetadata.clear();
-    const changed = JSON.stringify(previousFiles) !== JSON.stringify(fileIndex.files);
-    if (changed || statusChanged) fileIndexRevision++;
-    saveIndexSnapshot();
+    let discarded = false;
+    await sharedStateLock.withLock(async () => {
+      if (
+        !reloadSharedState()
+        || buildGeneration !== rootGeneration
+        || buildLibraryRevision !== libraryRevision
+        || rootPaths.join("\n") !== folderRoots.map((root) => root.path).join("\n")
+      ) {
+        discarded = true;
+        needsFollowupScan = true;
+        return;
+      }
+      await discardStaleDirtyPlaybackPaths();
+      candidateSnapshot = mergeNewerPersistedIndex(candidateSnapshot, rootPaths);
+      applyPendingIndexedMetadata(candidateSnapshot);
+      const previousFiles = fileIndex.files;
+      indexSnapshot = candidateSnapshot;
+      rebuildFileIndexFromSnapshot();
+      const changed = JSON.stringify(previousFiles) !== JSON.stringify(fileIndex.files);
+      if (changed || statusChanged) fileIndexRevision++;
+      if (saveIndexSnapshot()) {
+        indexLibraryRevision = libraryRevision;
+        pendingIndexedMetadata.clear();
+        indexMetadataDirty = false;
+      }
+      if (playbackPruned) {
+        playbackRevision++;
+        refreshWatchedPaths();
+        savePlaybackSnapshot();
+      }
+    });
+    if (discarded) return;
     adoptedMarkers.forEach((marker, rootPath) => {
       if (ownsIndexMarker(rootPath, marker)) return;
       forceFullScanRoots.add(rootPath);
       needsFollowupScan = true;
     });
-    if (playbackPruned) {
-      playbackRevision++;
-      refreshWatchedPaths();
-      savePlaybackSnapshot();
-    }
     diagnostics.setGauge("index.file-count", fileIndex.files.length);
     diagnostics.setGauge("index.root-count", rootPaths.length);
   } finally {
@@ -772,8 +912,17 @@ async function runFileIndexBuild() {
   }
 }
 
-async function indexFolderRecursive(folderPath, depth, targetIndex, progress, preferenceSnapshot, rootPath) {
+async function indexFolderRecursive(
+  folderPath,
+  depth,
+  targetIndex,
+  progress,
+  preferenceSnapshot,
+  rootPath,
+  { authorized = false } = {},
+) {
   try {
+    if (!authorized && !await isAuthorizedPath(folderPath)) return false;
     const folderName = folderPath.split("/").pop();
     if (depth > 0 && folderName && (folderName.startsWith(".") || folderName.startsWith("~"))) return true;
     const items = await file.list(folderPath);
@@ -834,7 +983,12 @@ async function indexFolderRecursive(folderPath, depth, targetIndex, progress, pr
       postWindowMessage("index-progress", { progress });
     }
     let complete = true;
-    for (const subdir of subdirs) {
+    const authorizedSubdirs = await PathSecurity.getPathsWithinRootsWithoutSymlinks(
+      subdirs,
+      folderRoots,
+      utils,
+    );
+    for (const subdir of authorizedSubdirs) {
       if (!await indexFolderRecursive(
         subdir,
         depth + 1,
@@ -842,6 +996,7 @@ async function indexFolderRecursive(folderPath, depth, targetIndex, progress, pr
         progress,
         preferenceSnapshot,
         rootPath,
+        { authorized: true },
       )) complete = false;
     }
     return complete;
@@ -850,10 +1005,10 @@ async function indexFolderRecursive(folderPath, depth, targetIndex, progress, pr
   }
 }
 
-function writeJson(path, value, category) {
+function writeJson(path, value, category, { scrubBackup = false } = {}) {
   try {
     const serialized = JSON.stringify(value);
-    if (file.exists(path)) {
+    if (!scrubBackup && file.exists(path)) {
       const previous = file.read(path);
       if (previous) {
         try {
@@ -865,6 +1020,7 @@ function writeJson(path, value, category) {
       }
     }
     file.write(path, serialized);
+    if (scrubBackup) file.write(`${path}.backup`, serialized);
     return true;
   } catch (err) {
     diagnostics.record(category || "state", "write-failed");
@@ -893,12 +1049,19 @@ function readJson(path) {
   }
 }
 
-function saveState() {
-  return writeJson(STATE_FILE, { folderRoots, queuePaths, version: 4 }, "state");
+function saveState({ scrubBackup = false } = {}) {
+  return writeJson(
+    STATE_FILE,
+    {
+      folderRoots, libraryRevision, queuePaths, version: 5,
+    },
+    "state",
+    { scrubBackup },
+  );
 }
 
-function saveIndexSnapshot() {
-  return writeJson(INDEX_FILE, indexSnapshot, "cache");
+function saveIndexSnapshot({ scrubBackup = false } = {}) {
+  return writeJson(INDEX_FILE, indexSnapshot, "cache", { scrubBackup });
 }
 
 function mergeNewerPersistedIndex(candidate, rootPaths) {
@@ -916,36 +1079,90 @@ function mergeNewerPersistedIndex(candidate, rootPaths) {
   return candidate;
 }
 
-function savePlaybackSnapshot() {
+function savePlaybackSnapshot({ scrubBackup = false, pruneToRoots = false } = {}) {
+  const flushedPaths = Array.from(dirtyPlaybackPaths);
   const previousRecords = JSON.stringify(playbackSnapshot.records);
   const onDisk = PlaybackState.normalizeSnapshot(readJson(PLAYBACK_FILE) || playbackSnapshot);
-  dirtyPlaybackPaths.forEach((path) => {
+  flushedPaths.forEach((path) => {
     if (hasOwn(playbackSnapshot.records, path)) onDisk.records[path] = playbackSnapshot.records[path];
     else delete onDisk.records[path];
   });
   playbackSnapshot = onDisk;
-  playbackSnapshot = PlaybackState.pruneSnapshot(playbackSnapshot);
+  playbackSnapshot = PlaybackState.pruneSnapshot(playbackSnapshot, {
+    isValidPath: pruneToRoots ? isPathInFolderRoots : undefined,
+  });
   if (JSON.stringify(playbackSnapshot.records) !== previousRecords) {
     playbackRevision++;
     indexedItemsCacheKey = null;
     smartCountCacheKey = null;
   }
   refreshWatchedPaths();
-  const succeeded = writeJson(PLAYBACK_FILE, playbackSnapshot, "playback");
+  const succeeded = writeJson(PLAYBACK_FILE, playbackSnapshot, "playback", { scrubBackup });
   if (succeeded) {
-    dirtyPlaybackPaths.clear();
+    flushedPaths.forEach((path) => {
+      dirtyPlaybackPaths.delete(path);
+      dirtyPlaybackRevisions.delete(path);
+    });
     diagnostics.increment("playback.flushes");
   }
   return succeeded;
 }
 
-function saveBrowserContext(nextContext) {
-  if (!nextContext || typeof nextContext !== "object" || Array.isArray(nextContext)) return;
+function reloadPlaybackSnapshotPreservingDirty() {
+  const onDisk = PlaybackState.normalizeSnapshot(readJson(PLAYBACK_FILE) || playbackSnapshot);
+  dirtyPlaybackPaths.forEach((path) => {
+    if (hasOwn(playbackSnapshot.records, path)) onDisk.records[path] = playbackSnapshot.records[path];
+    else delete onDisk.records[path];
+  });
+  playbackSnapshot = onDisk;
+  refreshWatchedPaths();
+}
+
+async function discardStaleDirtyPlaybackPaths() {
+  const directoryCache = new Map();
+  for (const path of Array.from(dirtyPlaybackPaths)) {
+    const dirtyRevision = dirtyPlaybackRevisions.get(path);
+    if (dirtyRevision === libraryRevision) continue;
+    if (await isAuthorizedMediaPath(path) && getFileItem(path, directoryCache)) continue;
+    // A root removal or Trash operation committed after this sample. Leave the
+    // newer on-disk deletion intact instead of overlaying stale local progress.
+    dirtyPlaybackPaths.delete(path);
+    dirtyPlaybackRevisions.delete(path);
+  }
+}
+
+function persistPlaybackSnapshot(options) {
+  return sharedStateLock.withLock(async () => {
+    if (!reloadSharedState()) return false;
+    await discardStaleDirtyPlaybackPaths();
+    return savePlaybackSnapshot(options);
+  });
+}
+
+function isCachedUnavailablePath(path, { directoryOnly = false } = {}) {
+  if (!isPathInFolderRoots(path)) return false;
+  const root = folderRoots.find((candidate) => BrowseState.isPathWithinRoots(path, [candidate]));
+  const snapshot = root && indexSnapshot.roots[root.path];
+  if (!snapshot || snapshot.status !== "unavailable") return false;
+  if (path === root.path || cachedChildrenByParent.has(path)) return true;
+  return !directoryOnly && indexedRecordsByPath.has(path);
+}
+
+function normalizeBrowserContext(nextContext, { excludedPaths = new Set() } = {}) {
+  if (!nextContext || typeof nextContext !== "object" || Array.isArray(nextContext)) return null;
+  const validContextPath = (value) => {
+    if (!isPathInFolderRoots(value) || excludedPaths.has(value)) return null;
+    if (isCachedUnavailablePath(value)) return value;
+    try {
+      return file.exists(value) ? value : null;
+    } catch (err) {
+      return null;
+    }
+  };
   const validView = typeof nextContext.view === "string" && hasOwn(SMART_VIEW_LABELS, nextContext.view)
     ? nextContext.view
     : null;
-  const validPath = isPathInFolderRoots(nextContext.path) ? nextContext.path : null;
-  const validOptionalPath = (value) => isPathInFolderRoots(value) ? value : null;
+  const validPath = validContextPath(nextContext.path);
   const recents = (Array.isArray(nextContext.recents) ? nextContext.recents : [])
     .slice(0, 12)
     .map((location) => {
@@ -953,7 +1170,8 @@ function saveBrowserContext(nextContext) {
       if (typeof location.view === "string" && hasOwn(SMART_VIEW_LABELS, location.view)) {
         return { view: location.view, path: null };
       }
-      return isPathInFolderRoots(location.path) ? { view: null, path: location.path } : null;
+      const path = validContextPath(location.path);
+      return path ? { view: null, path } : null;
     })
     .filter(Boolean);
   const allowed = {
@@ -963,13 +1181,41 @@ function saveBrowserContext(nextContext) {
     query: typeof nextContext.query === "string" ? nextContext.query.substring(0, 500) : "",
     filter: typeof nextContext.filter === "string" ? nextContext.filter.substring(0, 32) : "all",
     layout: nextContext.layout === "grid" ? "grid" : "list",
-    focusedPath: validOptionalPath(nextContext.focusedPath),
-    scrollAnchor: validOptionalPath(nextContext.scrollAnchor),
+    focusedPath: validContextPath(nextContext.focusedPath),
+    scrollAnchor: validContextPath(nextContext.scrollAnchor),
     scrollOffset: Number.isFinite(Number(nextContext.scrollOffset)) ? Number(nextContext.scrollOffset) : 0,
     recents,
   };
+  return allowed;
+}
+
+function saveBrowserContextSnapshot(nextContext, options = {}) {
+  const allowed = normalizeBrowserContext(nextContext, options);
+  if (!allowed) return false;
   browserContext = allowed;
-  writeJson(BROWSER_CONTEXT_FILE, allowed, "state");
+  return writeJson(BROWSER_CONTEXT_FILE, allowed, "state", options);
+}
+
+function scrubBrowserContext(excludedPaths = new Set()) {
+  const persisted = readJson(BROWSER_CONTEXT_FILE) || browserContext;
+  if (!persisted) return true;
+  return saveBrowserContextSnapshot(persisted, { excludedPaths, scrubBackup: true });
+}
+
+function saveBrowserContext(nextContext) {
+  return sharedStateLock.withLock(() => {
+    if (!reloadSharedState()) return false;
+    if (indexLibraryRevision !== libraryRevision) {
+      const persistedIndex = readJson(INDEX_FILE);
+      if (persistedIndex && IndexState.isCompatible(persistedIndex, getIndexConfigKey())) {
+        indexSnapshot = IndexState.normalizeSnapshot(persistedIndex);
+        indexSnapshotPrepared = true;
+        indexLibraryRevision = libraryRevision;
+        rebuildFileIndexFromSnapshot();
+      }
+    }
+    return saveBrowserContextSnapshot(nextContext);
+  });
 }
 
 function getIndexConfigKey(preferenceSnapshot = getPreferencesSnapshot()) {
@@ -980,6 +1226,19 @@ function getIndexConfigKey(preferenceSnapshot = getPreferencesSnapshot()) {
     filterImages: preferenceSnapshot.filterImages,
     videoOnly: preferenceSnapshot.videoOnly,
   });
+}
+
+function hasCompatibleIndexPreferences(configKey, preferenceSnapshot = getPreferencesSnapshot()) {
+  try {
+    const config = JSON.parse(configKey);
+    return config
+      && config.maxIndexDepth === preferenceSnapshot.maxIndexDepth
+      && config.filterAudio === preferenceSnapshot.filterAudio
+      && config.filterImages === preferenceSnapshot.filterImages
+      && config.videoOnly === preferenceSnapshot.videoOnly;
+  } catch (err) {
+    return false;
+  }
 }
 
 function rebuildFileIndexFromSnapshot() {
@@ -1058,6 +1317,11 @@ function normalizeFolderRoots(roots) {
   return normalized;
 }
 
+function normalizeLibraryRevision(value) {
+  const revision = Number(value);
+  return Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
+}
+
 function reconcileIndexRoots() {
   const configured = new Set(folderRoots.map((root) => root.path));
   let changed = false;
@@ -1081,6 +1345,7 @@ function reloadSharedState() {
   }
   const previousRoots = folderRoots.map((root) => root.path).join("\n");
   folderRoots = normalizeFolderRoots(latest.folderRoots);
+  libraryRevision = normalizeLibraryRevision(latest.libraryRevision);
   queuePaths = QueueState.normalizePaths(latest.queuePaths).filter(isValidMediaPath);
   if (previousRoots !== folderRoots.map((root) => root.path).join("\n")) rootGeneration++;
   if (reconcileIndexRoots()) {
@@ -1102,6 +1367,8 @@ function loadState() {
     const state = readJson(STATE_FILE);
     if (state && Array.isArray(state.folderRoots)) {
       folderRoots = normalizeFolderRoots(state.folderRoots);
+      libraryRevision = normalizeLibraryRevision(state.libraryRevision);
+      indexLibraryRevision = libraryRevision;
       const cachedIndex = readJson(INDEX_FILE);
       const compatibleSchema = cachedIndex && Number(cachedIndex.version) === IndexState.SCHEMA_VERSION;
       indexSnapshot = compatibleSchema
@@ -1115,16 +1382,24 @@ function loadState() {
         now: Date.now(),
       });
       if (!file.exists(PLAYBACK_FILE)) {
-        Object.keys(playbackSnapshot.records).forEach((path) => dirtyPlaybackPaths.add(path));
+        Object.keys(playbackSnapshot.records).forEach((path) => markPlaybackDirty(path));
       }
       refreshWatchedPaths();
       if (indexSnapshotPrepared) rebuildFileIndexFromSnapshot();
       queuePaths = QueueState.normalizePaths(state.queuePaths).filter(isValidMediaPath);
       browserContext = readJson(BROWSER_CONTEXT_FILE);
-      if (Number(state.version) < 4 || !compatibleSchema || !file.exists(PLAYBACK_FILE)) {
-        const migratedIndexSaved = saveIndexSnapshot();
-        const migratedPlaybackSaved = savePlaybackSnapshot();
-        if (migratedIndexSaved && migratedPlaybackSaved) saveState();
+      if (Number(state.version) < 5 || !compatibleSchema || !file.exists(PLAYBACK_FILE)) {
+        sharedStateLock.withLock(async () => {
+          if (!reloadSharedState()) return;
+          await discardStaleDirtyPlaybackPaths();
+          indexSnapshot = mergeNewerPersistedIndex(
+            IndexState.normalizeSnapshot(indexSnapshot),
+            folderRoots.map((root) => root.path),
+          );
+          const migratedIndexSaved = saveIndexSnapshot();
+          const migratedPlaybackSaved = savePlaybackSnapshot();
+          if (migratedIndexSaved && migratedPlaybackSaved) saveState();
+        }).catch(() => {});
       }
       return;
     }
@@ -1136,7 +1411,10 @@ function loadState() {
         const legacyFolders = JSON.parse(data);
         if (Array.isArray(legacyFolders)) {
           folderRoots = normalizeFolderRoots(legacyFolders);
-          saveState();
+          sharedStateLock.withLock(() => {
+            if (!reloadSharedState()) return false;
+            return saveState();
+          }).catch(() => {});
         }
       }
     }
@@ -1274,6 +1552,19 @@ function getWatchedItems() {
 function getQueueItems() {
   const directoryCache = new Map();
   return queuePaths.map((path) => getFileItem(path, directoryCache)).filter(Boolean);
+}
+
+function getCompactQueueItems() {
+  return queuePaths.map((path) => {
+    const name = path.split("/").pop() || path;
+    return decorateFileItem({
+      path,
+      name,
+      isDir: false,
+      type: getFileTypeByExt(name),
+      ext: FileTypes.getExtension(name),
+    });
+  });
 }
 
 function getIndexedItems() {
@@ -1510,7 +1801,7 @@ function updateWindow() {
     isIndexing,
     folderDepth: getCurrentFolderDepth(),
     preferences: preferenceSnapshot,
-    queueItems: getQueueItems(),
+    queueItems: deferHeavyIndexWork ? getCompactQueueItems() : getQueueItems(),
     navigationColumns: getNavigationColumns(),
     rootStatuses: Object.values(indexSnapshot.roots || {}).filter((root) => (
       root && typeof root === "object"
@@ -1535,11 +1826,17 @@ function scheduleDeferredIndexPublication(delay = 0) {
   if (deferredIndexTimer) return;
   deferredIndexTimer = setTimeout(() => {
     deferredIndexTimer = null;
-    prepareCachedIndex();
-    deferHeavyIndexWork = false;
-    publishedIndexRevision = null;
+    prepareDeferredIndexPublication();
     if (windowIsOpen) updateWindow();
   }, delay);
+}
+
+function prepareDeferredIndexPublication() {
+  if (deferredIndexTimer) clearTimeout(deferredIndexTimer);
+  deferredIndexTimer = null;
+  prepareCachedIndex();
+  deferHeavyIndexWork = false;
+  publishedIndexRevision = null;
 }
 
 function rebuildIndexExtensions() {
@@ -1547,84 +1844,110 @@ function rebuildIndexExtensions() {
   fileIndexRevision++;
 }
 
-function updateWatchedItems(paths, watched) {
-  if (!reloadSharedState()) return;
+async function partitionAuthorizedMediaPaths(paths) {
   const succeeded = [];
   const failed = [];
   const directoryCache = new Map();
-  BrowseState.normalizePaths(paths).slice(0, 1000).forEach((path) => {
-    if (!getFileItem(path, directoryCache)) {
+  const requested = BrowseState.normalizePaths(paths).slice(0, 1000);
+  const existing = requested.filter(isValidMediaPath);
+  const authorized = new Set(await PathSecurity.getPathsWithinRootsWithoutSymlinks(
+    existing,
+    folderRoots,
+    utils,
+  ));
+  for (const path of requested) {
+    if (!authorized.has(path) || !getFileItem(path, directoryCache)) {
       failed.push({ path, reason: "File is unavailable or outside Quick Folders" });
-      return;
+      continue;
     }
     succeeded.push(path);
-  });
-
-  if (succeeded.length > 0) {
-    playbackSnapshot = PlaybackState.updateManualState(
-      playbackSnapshot,
-      succeeded,
-      watched ? "watched" : "unwatched",
-    );
-    playbackRevision++;
-    succeeded.forEach((path) => dirtyPlaybackPaths.add(path));
-    refreshWatchedPaths();
-    fileIndexRevision++;
-    savePlaybackSnapshot();
   }
+  return { succeeded, failed };
+}
+
+async function updateWatchedItems(paths, watched) {
+  let result = { succeeded: [], failed: [] };
+  await sharedStateLock.withLock(async () => {
+    if (!reloadSharedState()) return;
+    await discardStaleDirtyPlaybackPaths();
+    reloadPlaybackSnapshotPreservingDirty();
+    result = await partitionAuthorizedMediaPaths(paths);
+
+    if (result.succeeded.length > 0) {
+      playbackSnapshot = PlaybackState.updateManualState(
+        playbackSnapshot,
+        result.succeeded,
+        watched ? "watched" : "unwatched",
+      );
+      playbackRevision++;
+      result.succeeded.forEach((path) => markPlaybackDirty(path));
+      refreshWatchedPaths();
+      fileIndexRevision++;
+      savePlaybackSnapshot();
+    }
+  });
   updateWindow();
   postWindowMessage("item-action-result", {
     action: watched ? "watched" : "unwatched",
-    succeeded,
-    failed,
+    succeeded: result.succeeded,
+    failed: result.failed,
   });
 }
 
-function deleteItems(paths) {
-  if (!reloadSharedState()) return;
-  prepareCachedIndex();
+async function deleteItems(paths) {
   const succeeded = [];
   const failed = [];
-  const directoryCache = new Map();
-  BrowseState.normalizePaths(paths).slice(0, 1000).forEach((path) => {
-    if (!getFileItem(path, directoryCache)) {
-      failed.push({ path, reason: "File is unavailable or outside Quick Folders" });
-      return;
+  let scanWasActive = false;
+  await sharedStateLock.withLock(async () => {
+    if (!reloadSharedState()) return;
+    await discardStaleDirtyPlaybackPaths();
+    prepareCachedIndex();
+    const authorized = await partitionAuthorizedMediaPaths(paths);
+    failed.push(...authorized.failed);
+    for (const path of authorized.succeeded) {
+      try {
+        // IINA only permits file.delete for plugin-owned @tmp/@data paths.
+        // User media must go through the filesystem API's recoverable trash path.
+        if (!await isAuthorizedMediaPath(path)) throw new Error("File is no longer safely accessible");
+        file.trash(path);
+        if (file.exists(path)) throw new Error("The file still exists after moving it to Trash");
+        delete playbackSnapshot.records[path];
+        markPlaybackDirty(path);
+        playbackRevision++;
+        queuePaths = QueueState.removePaths(queuePaths, [path]);
+        thumbnailLoader.remove(path);
+        mediaMetadataLoader.remove(path);
+        succeeded.push(path);
+      } catch (err) {
+        failed.push({ path, reason: err && err.message ? err.message : "Deletion failed" });
+      }
     }
-    try {
-      // IINA only permits file.delete for plugin-owned @tmp/@data paths.
-      // User media must go through the filesystem API's recoverable trash path.
-      file.trash(path);
-      if (file.exists(path)) throw new Error("The file still exists after moving it to Trash");
-      delete playbackSnapshot.records[path];
-      dirtyPlaybackPaths.add(path);
-      playbackRevision++;
-      queuePaths = QueueState.removePaths(queuePaths, [path]);
-      thumbnailLoader.remove(path);
-      mediaMetadataLoader.remove(path);
-      succeeded.push(path);
-    } catch (err) {
-      failed.push({ path, reason: err && err.message ? err.message : "Deletion failed" });
+
+    if (succeeded.length > 0) {
+      libraryRevision++;
+      scanWasActive = Boolean(activeIndexBuild);
+      rootGeneration++;
+      const persistedIndex = readJson(INDEX_FILE);
+      if (persistedIndex && IndexState.isCompatible(persistedIndex, indexSnapshot.configKey)) {
+        indexSnapshot = IndexState.normalizeSnapshot(persistedIndex);
+      }
+      const deleted = new Set(succeeded);
+      Object.values(indexSnapshot.roots || {}).forEach((root) => {
+        root.files = root.files.filter((item) => !deleted.has(item.path));
+      });
+      rebuildFileIndexFromSnapshot();
+      indexLibraryRevision = libraryRevision;
+      refreshWatchedPaths();
+      folderScanCache.clear();
+      rebuildIndexExtensions();
+      saveState({ scrubBackup: true });
+      saveIndexSnapshot({ scrubBackup: true });
+      savePlaybackSnapshot({ scrubBackup: true });
+      scrubBrowserContext(deleted);
     }
   });
-
-  if (succeeded.length > 0) {
-    const scanWasActive = Boolean(activeIndexBuild);
-    rootGeneration++;
-    const deleted = new Set(succeeded);
-    Object.values(indexSnapshot.roots || {}).forEach((root) => {
-      root.files = root.files.filter((item) => !deleted.has(item.path));
-    });
-    rebuildFileIndexFromSnapshot();
-    refreshWatchedPaths();
-    folderScanCache.clear();
-    rebuildIndexExtensions();
-    saveState();
-    saveIndexSnapshot();
-    savePlaybackSnapshot();
-    if (scanWasActive) {
-      buildFileIndex({ afterCurrent: true }).then(updateWindow).catch(() => {});
-    }
+  if (scanWasActive) {
+    buildFileIndex({ afterCurrent: true }).then(updateWindow).catch(() => {});
   }
   updateWindow();
   postWindowMessage("item-action-result", {
@@ -1639,97 +1962,106 @@ function postQueueResult(action, succeeded = [], failed = []) {
   postWindowMessage("queue-action-result", { action, succeeded, failed });
 }
 
-function addQueueItems({ paths } = {}) {
-  if (!reloadSharedState()) {
-    postQueueResult("added", [], [{ reason: "Shared state is temporarily unavailable" }]);
-    return;
-  }
-  const requested = QueueState.normalizePaths(paths);
-  const existing = new Set(queuePaths);
-  const directoryCache = new Map();
-  const valid = [];
-  const failed = [];
-  requested.forEach((path) => {
-    if (!getFileItem(path, directoryCache)) {
-      failed.push({ path, reason: "File is unavailable or outside Quick Folders" });
-    } else {
-      valid.push(path);
+async function addQueueItems(data) {
+  const paths = data && typeof data === "object" ? data.paths : undefined;
+  let result = { succeeded: [], failed: [] };
+  await sharedStateLock.withLock(async () => {
+    if (!reloadSharedState()) {
+      result.failed.push({ reason: "Shared state is temporarily unavailable" });
+      return;
     }
+    const requested = QueueState.normalizePaths(paths);
+    const existing = new Set(queuePaths);
+    const authorized = await partitionAuthorizedMediaPaths(requested);
+    queuePaths = QueueState.addPaths(queuePaths, authorized.succeeded);
+    result = {
+      succeeded: authorized.succeeded.filter((path) => !existing.has(path)),
+      failed: authorized.failed,
+    };
+    if (result.succeeded.length > 0) saveState();
   });
-
-  queuePaths = QueueState.addPaths(queuePaths, valid);
-  const succeeded = valid.filter((path) => !existing.has(path));
-  if (succeeded.length > 0) saveState();
   updateWindow();
-  postQueueResult("added", succeeded, failed);
+  postQueueResult("added", result.succeeded, result.failed);
 }
 
-function removeQueueItems({ paths } = {}) {
-  if (!reloadSharedState()) {
-    postQueueResult("removed", [], [{ reason: "Shared state is temporarily unavailable" }]);
-    return;
-  }
-  const requested = new Set(QueueState.normalizePaths(paths));
-  const succeeded = queuePaths.filter((path) => requested.has(path));
+async function removeQueueItems(data) {
+  const paths = data && typeof data === "object" ? data.paths : undefined;
+  let succeeded = [];
+  await sharedStateLock.withLock(() => {
+    if (!reloadSharedState()) return;
+    const requested = new Set(QueueState.normalizePaths(paths));
+    succeeded = queuePaths.filter((path) => requested.has(path));
+    if (succeeded.length === 0) return;
+    queuePaths = QueueState.removePaths(queuePaths, succeeded);
+    saveState();
+  });
   if (succeeded.length === 0) return;
-  queuePaths = QueueState.removePaths(queuePaths, succeeded);
-  saveState();
   updateWindow();
   postQueueResult("removed", succeeded);
 }
 
-function clearQueue() {
-  if (!reloadSharedState()) {
-    postQueueResult("cleared", [], [{ reason: "Shared state is temporarily unavailable" }]);
-    return;
-  }
-  if (queuePaths.length === 0) return;
-  const succeeded = queuePaths.slice();
-  queuePaths = [];
-  saveState();
+async function clearQueue() {
+  let succeeded = [];
+  await sharedStateLock.withLock(() => {
+    if (!reloadSharedState() || queuePaths.length === 0) return;
+    succeeded = queuePaths.slice();
+    queuePaths = [];
+    saveState();
+  });
+  if (succeeded.length === 0) return;
   updateWindow();
   postQueueResult("cleared", succeeded);
 }
 
-function reorderQueue({ paths, targetPath, position } = {}) {
-  if (!reloadSharedState()) return;
-  const nextQueue = QueueState.movePaths(queuePaths, paths, targetPath, position);
-  if (nextQueue.join("\n") === queuePaths.join("\n")) return;
-  queuePaths = nextQueue;
-  saveState();
+async function reorderQueue(data) {
+  const source = data && typeof data === "object" ? data : {};
+  let changed = false;
+  await sharedStateLock.withLock(() => {
+    if (!reloadSharedState()) return;
+    const nextQueue = QueueState.movePaths(queuePaths, source.paths, source.targetPath, source.position);
+    if (nextQueue.join("\n") === queuePaths.join("\n")) return;
+    queuePaths = nextQueue;
+    changed = saveState();
+  });
+  if (!changed) return;
   updateWindow();
 }
 
 async function playQueue() {
-  if (!reloadSharedState()) {
-    postQueueResult("played", [], [{ reason: "Shared state is temporarily unavailable" }]);
-    return;
-  }
-  const directoryCache = new Map();
-  const validPaths = queuePaths.filter((path) => Boolean(getFileItem(path, directoryCache)));
-  const failed = queuePaths
-    .filter((path) => !validPaths.includes(path))
-    .map((path) => ({ path, reason: "File is unavailable or outside Quick Folders" }));
-
-  if (validPaths.length !== queuePaths.length) {
-    queuePaths = validPaths;
-    saveState();
-    updateWindow();
-  }
+  let validPaths = [];
+  let failed = [];
+  await sharedStateLock.withLock(async () => {
+    if (!reloadSharedState()) {
+      failed = [{ reason: "Shared state is temporarily unavailable" }];
+      return;
+    }
+    const authorized = await partitionAuthorizedMediaPaths(queuePaths);
+    validPaths = authorized.succeeded;
+    failed = authorized.failed;
+    if (validPaths.length !== queuePaths.length) {
+      queuePaths = validPaths;
+      saveState();
+    }
+  });
+  updateWindow();
   if (validPaths.length === 0) {
     postQueueResult("played", [], failed.length > 0 ? failed : [{ reason: "Queue is empty" }]);
     return;
   }
 
   try {
+    const finalAuthorization = await partitionAuthorizedMediaPaths(validPaths);
+    const launchPaths = finalAuthorization.succeeded;
+    failed = failed.concat(finalAuthorization.failed);
+    if (launchPaths.length === 0) throw new Error("Queue is empty");
     if (!isManagedQueuePlayer && globalApi && typeof globalApi.postMessage === "function") {
-      globalApi.postMessage("quick-folders-play-queue", { paths: validPaths });
+      globalApi.postMessage("quick-folders-play-queue", { paths: launchPaths });
       return;
     }
     // QueuePlayback opens the first item and reconciles IINA's native playlist,
     // including the containing-folder entries IINA may append automatically.
-    await queuePlayback.start(validPaths);
-    postQueueResult("played", validPaths, failed);
+    await queuePlayback.start(launchPaths);
+    postQueueResult("played", launchPaths, failed);
   } catch (err) {
     postQueueResult("played", [], [{ reason: err && err.message ? err.message : "Unable to start queue" }]);
   }
@@ -1749,14 +2081,13 @@ function registerNativeQueueBridge() {
     return;
   }
 
-  globalApi.onMessage("quick-folders-queue-items", async ({ paths } = {}) => {
+  globalApi.onMessage("quick-folders-queue-items", async (data) => {
     loadState();
-    const directoryCache = new Map();
-    const requested = QueueState.normalizePaths(paths);
-    const validPaths = requested.filter((path) => Boolean(getFileItem(path, directoryCache)));
-    const failed = requested
-      .filter((path) => !validPaths.includes(path))
-      .map((path) => ({ path, reason: "File is unavailable or outside Quick Folders" }));
+    const source = data && typeof data === "object" ? data : {};
+    const requested = QueueState.normalizePaths(source.paths);
+    const authorized = await partitionAuthorizedMediaPaths(requested);
+    const validPaths = authorized.succeeded;
+    const failed = authorized.failed;
     try {
       if (validPaths.length === 0) throw new Error("Queue is empty");
       // createPlayerInstance already opened the first item. Reopening it here
@@ -1778,7 +2109,8 @@ function registerNativeQueueBridge() {
   setTimeout(() => globalApi.postMessage("quick-folders-queue-player-ready"), 0);
 }
 
-function setQueuePanelOpen({ open, resize = true } = {}) {
+function setQueuePanelOpen(data) {
+  const { open, resize = true } = data && typeof data === "object" ? data : {};
   if (!resize) return;
   standaloneWindow.setFrame(open ? QUEUE_WINDOW_WIDTH : BROWSER_WINDOW_WIDTH, WINDOW_HEIGHT, null, null);
 }
@@ -1800,15 +2132,19 @@ async function addFolder() {
     }
 
     if (!folderPath) return;
-    if (!reloadSharedState()) return;
     folderPath = IndexState.normalizeRootPath(folderPath);
     if (!folderPath) return;
-    if (folderRoots.some((f) => f.path === folderPath)) return;
-
-    const folderName = folderPath.split("/").pop() || folderPath;
-    folderRoots.push({ path: folderPath, name: folderName });
-    rootGeneration++;
-    saveState();
+    if (await PathSecurity.hasSymlinkComponent(folderPath, utils)) return;
+    let added = false;
+    await sharedStateLock.withLock(() => {
+      if (!reloadSharedState() || folderRoots.some((f) => f.path === folderPath)) return;
+      const folderName = folderPath.split("/").pop() || folderPath;
+      folderRoots.push({ path: folderPath, name: folderName });
+      libraryRevision++;
+      rootGeneration++;
+      added = saveState();
+    });
+    if (!added) return;
     updateWindow();
 
     await buildFileIndex({ afterCurrent: true });
@@ -1820,7 +2156,10 @@ async function addFolder() {
 
 let windowHandlersRegistered = false;
 
-function openItem({ path, isDir, isWatchedRoot, isSmartView, smartView } = {}) {
+async function openItem(data) {
+  const {
+    path, isDir, isWatchedRoot, isSmartView, smartView,
+  } = data && typeof data === "object" ? data : {};
   prepareCachedIndex();
   const requestedView = isWatchedRoot || path === "@watched"
     ? "watched"
@@ -1835,6 +2174,8 @@ function openItem({ path, isDir, isWatchedRoot, isSmartView, smartView } = {}) {
   if (!isPathInFolderRoots(path)) return;
 
   if (isDir) {
+    const safelyCached = isCachedUnavailablePath(path, { directoryOnly: true });
+    if (!safelyCached && !await isAuthorizedPath(path)) return;
     if (!isBrowsableDirectory(path)) return;
     history.push(currentPath);
     currentPath = path;
@@ -1842,8 +2183,9 @@ function openItem({ path, isDir, isWatchedRoot, isSmartView, smartView } = {}) {
     updateWindow();
     return;
   }
-  if (!getFileItem(path)) return;
+  if (!await isAuthorizedMediaPath(path) || !getFileItem(path)) return;
   try {
+    if (!await isAuthorizedMediaPath(path)) return;
     core.open(path);
   } catch (err) {
     console.error("[Quick Folders] Failed to open media:", err);
@@ -1861,9 +2203,11 @@ function goBack() {
   updateWindow();
 }
 
-function navigateTo({ path } = {}) {
+async function navigateTo(data) {
+  const path = data && typeof data === "object" ? data.path : undefined;
   prepareCachedIndex();
-  if (!isBrowsableDirectory(path)) {
+  const safelyCached = isCachedUnavailablePath(path, { directoryOnly: true });
+  if ((!safelyCached && !await isAuthorizedPath(path)) || !isBrowsableDirectory(path)) {
     history = [];
     currentPath = null;
     currentView = null;
@@ -1883,21 +2227,40 @@ function goRoot() {
   updateWindow();
 }
 
-async function removeRoot({ path } = {}) {
-  if (!reloadSharedState()) return;
-  prepareCachedIndex();
-  const nextRoots = folderRoots.filter((root) => root.path !== path);
-  if (nextRoots.length === folderRoots.length) return;
-  folderRoots = nextRoots;
-  rootGeneration++;
-  indexSnapshot = IndexState.removeRoot(indexSnapshot, path);
-  queuePaths = queuePaths.filter((queuedPath) => !BrowseState.isPathWithinRoots(queuedPath, [{ path }]));
-  if (currentPath && BrowseState.isPathWithinRoots(currentPath, [{ path }])) {
-    currentPath = null;
-    history = [];
-  }
-  saveState();
-  saveIndexSnapshot();
+async function removeRoot(data) {
+  const path = data && typeof data === "object" ? data.path : undefined;
+  let removed = false;
+  await sharedStateLock.withLock(async () => {
+    if (!reloadSharedState()) return;
+    await discardStaleDirtyPlaybackPaths();
+    prepareCachedIndex();
+    const nextRoots = folderRoots.filter((root) => root.path !== path);
+    if (nextRoots.length === folderRoots.length) return;
+    folderRoots = nextRoots;
+    libraryRevision++;
+    rootGeneration++;
+    const persistedIndex = readJson(INDEX_FILE);
+    if (persistedIndex && IndexState.isCompatible(persistedIndex, indexSnapshot.configKey)) {
+      indexSnapshot = IndexState.normalizeSnapshot(persistedIndex);
+    }
+    indexSnapshot = IndexState.removeRoot(indexSnapshot, path);
+    indexLibraryRevision = libraryRevision;
+    indexSnapshot.configKey = getIndexConfigKey();
+    Array.from(pendingIndexedMetadata.keys()).forEach((metadataPath) => {
+      if (!isPathInFolderRoots(metadataPath)) pendingIndexedMetadata.delete(metadataPath);
+    });
+    queuePaths = queuePaths.filter((queuedPath) => !BrowseState.isPathWithinRoots(queuedPath, [{ path }]));
+    if (currentPath && BrowseState.isPathWithinRoots(currentPath, [{ path }])) {
+      currentPath = null;
+      history = [];
+    }
+    const stateSaved = saveState({ scrubBackup: true });
+    const indexSaved = saveIndexSnapshot({ scrubBackup: true });
+    const playbackSaved = savePlaybackSnapshot({ scrubBackup: true, pruneToRoots: true });
+    const browserContextSaved = scrubBrowserContext();
+    removed = stateSaved && indexSaved && playbackSaved && browserContextSaved;
+  });
+  if (!removed) return;
   await buildFileIndex({ afterCurrent: true });
   updateWindow();
 }
@@ -1907,21 +2270,28 @@ function registerWindowHandlers() {
   windowHandlersRegistered = true;
   standaloneWindow.onMessage("open-item", openItem);
   standaloneWindow.onMessage("go-back", goBack);
-  standaloneWindow.onMessage("request-state", ({ indexRevision } = {}) => {
+  standaloneWindow.onMessage("request-state", (data) => {
+    const { indexRevision } = data && typeof data === "object" ? data : {};
     windowIsOpen = true;
     if (indexRevision !== fileIndexRevision) publishedIndexRevision = null;
     updateWindow();
-    scheduleDeferredIndexPublication();
+    if (deferHeavyIndexWork) scheduleDeferredIndexPublication(0);
   });
   standaloneWindow.onMessage("window-closed", () => {
     windowIsOpen = false;
+    flushIndexMetadata();
   });
   standaloneWindow.onMessage("request-thumbnail", (data) => requestThumbnail(data && data.path));
   standaloneWindow.onMessage("request-media-metadata", (data) => requestMediaMetadata(data && data.path));
   standaloneWindow.onMessage("navigate-to", navigateTo);
   standaloneWindow.onMessage("go-root", goRoot);
-  standaloneWindow.onMessage("set-watched", ({ paths, watched } = {}) => updateWatchedItems(paths, Boolean(watched)));
-  standaloneWindow.onMessage("delete-items", ({ paths } = {}) => deleteItems(paths));
+  standaloneWindow.onMessage("set-watched", (data) => {
+    const { paths, watched } = data && typeof data === "object" ? data : {};
+    return updateWatchedItems(paths, Boolean(watched));
+  });
+  standaloneWindow.onMessage("delete-items", (data) => (
+    deleteItems(data && typeof data === "object" ? data.paths : undefined)
+  ));
   standaloneWindow.onMessage("queue-add", addQueueItems);
   standaloneWindow.onMessage("queue-remove", removeQueueItems);
   standaloneWindow.onMessage("queue-clear", clearQueue);
@@ -1950,8 +2320,9 @@ function registerWindowHandlers() {
     diagnostics.reset();
     postWindowMessage("diagnostics-reset", { succeeded: true });
   });
-  standaloneWindow.onMessage("continue-series", ({ path, queue = false } = {}) => {
-    if (!isValidMediaPath(path)) return;
+  standaloneWindow.onMessage("continue-series", async (data) => {
+    const { path, queue = false } = data && typeof data === "object" ? data : {};
+    if (!await isAuthorizedMediaPath(path)) return;
     const source = getIndexedItems().find((item) => item.path === path);
     if (!source || !source.seriesKey) return;
     const recommendation = SeriesState.recommendNextEpisode(
@@ -1959,8 +2330,8 @@ function registerWindowHandlers() {
       { getPlaybackState: (item) => item.playbackState },
     );
     if (!recommendation) return;
-    if (queue) addQueueItems({ paths: [recommendation.path] });
-    else openItem({ path: recommendation.path, isDir: false });
+    if (queue) await addQueueItems({ paths: [recommendation.path] });
+    else await openItem({ path: recommendation.path, isDir: false });
   });
   standaloneWindow.onMessage("refresh-index", async () => {
     await buildFileIndex();
@@ -1969,6 +2340,7 @@ function registerWindowHandlers() {
 }
 
 let currentPlaybackPath = null;
+let currentPlaybackLibraryRevision = null;
 let progressWriteTimer = null;
 
 function getLocalPlaybackPath(value) {
@@ -1996,7 +2368,7 @@ function schedulePlaybackFlush() {
   if (progressWriteTimer) return;
   progressWriteTimer = setTimeout(() => {
     progressWriteTimer = null;
-    savePlaybackSnapshot();
+    persistPlaybackSnapshot().catch(() => {});
     if (windowIsOpen) updateWindow();
   }, PROGRESS_WRITE_DELAY);
 }
@@ -2004,8 +2376,11 @@ function schedulePlaybackFlush() {
 function flushPlaybackState() {
   if (progressWriteTimer) clearTimeout(progressWriteTimer);
   progressWriteTimer = null;
-  if (dirtyPlaybackPaths.size > 0) savePlaybackSnapshot();
+  const pendingSave = dirtyPlaybackPaths.size > 0
+    ? persistPlaybackSnapshot()
+    : Promise.resolve(true);
   if (windowIsOpen) updateWindow();
+  return pendingSave;
 }
 
 function capturePlaybackSample({ flush = false } = {}) {
@@ -2026,7 +2401,10 @@ function capturePlaybackSample({ flush = false } = {}) {
       lastPlayedAt: Date.now(),
     });
     playbackRevision++;
-    dirtyPlaybackPaths.add(currentPlaybackPath);
+    markPlaybackDirty(
+      currentPlaybackPath,
+      currentPlaybackLibraryRevision == null ? libraryRevision : currentPlaybackLibraryRevision,
+    );
     diagnostics.increment("playback.updates");
     refreshWatchedPaths();
     const nextState = getPlaybackPresentation(currentPlaybackPath).state;
@@ -2034,14 +2412,31 @@ function capturePlaybackSample({ flush = false } = {}) {
     else refreshCachedPlaybackItem(currentPlaybackPath);
     if (!flush) schedulePlaybackFlush();
   }
-  if (flush) flushPlaybackState();
+  if (flush) return flushPlaybackState();
+  return undefined;
 }
 
-function handlePlaybackLoaded(url) {
-  if (dirtyPlaybackPaths.size > 0) savePlaybackSnapshot();
+function handlePlaybackStarted() {
+  // IINA announces the next file before it is fully loaded. Stop associating
+  // status changes with the preceding path during that transition window.
+  const pendingSave = flushPlaybackState();
+  currentPlaybackPath = null;
+  currentPlaybackLibraryRevision = null;
+  return pendingSave;
+}
+
+async function handlePlaybackLoaded(url) {
+  if (dirtyPlaybackPaths.size > 0) await persistPlaybackSnapshot();
   const status = getPlaybackStatus();
   currentPlaybackPath = getLocalPlaybackPath(url || (status && status.url));
-  if (!currentPlaybackPath) diagnostics.record("playback", "invalid-path");
+  if (!currentPlaybackPath) {
+    diagnostics.record("playback", "invalid-path");
+    return;
+  }
+  currentPlaybackLibraryRevision = libraryRevision;
+  // Duration and IINA's own resume position are available only after loading;
+  // both are required before deciding whether a plugin seek is safe.
+  resumeCurrentPlayback();
 }
 
 function resumeCurrentPlayback() {
@@ -2074,12 +2469,15 @@ function resumeCurrentPlayback() {
 
 function registerPlaybackHandlers() {
   if (!event || typeof event.on !== "function") return;
+  event.on("iina.file-started", handlePlaybackStarted);
   event.on("iina.file-loaded", handlePlaybackLoaded);
-  event.on("iina.file-started", resumeCurrentPlayback);
   event.on("mpv.time-pos.changed", () => capturePlaybackSample());
   event.on("mpv.pause.changed", () => capturePlaybackSample({ flush: true }));
   event.on("mpv.end-file", () => capturePlaybackSample({ flush: true }));
-  event.on("iina.window-will-close", () => capturePlaybackSample({ flush: true }));
+  event.on("iina.window-will-close", async () => {
+    await capturePlaybackSample({ flush: true });
+    await flushIndexMetadata();
+  });
 }
 
 function openWindow() {
@@ -2116,7 +2514,6 @@ function openWindow() {
 
     standaloneWindow.open();
     updateWindow();
-    scheduleDeferredIndexPublication(250);
   } catch (err) {
     console.error("[Quick Folders] Failed to open window:", err);
   }

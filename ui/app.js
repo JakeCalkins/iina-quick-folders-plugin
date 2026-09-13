@@ -50,6 +50,7 @@ const commandBtn = document.getElementById("command-btn");
 const listLayoutBtn = document.getElementById("list-layout-btn");
 const gridLayoutBtn = document.getElementById("grid-layout-btn");
 const searchInput = document.getElementById("search-input");
+const searchControl = searchInput ? searchInput.closest(".search-control") : null;
 const clearSearchBtn = document.getElementById("clear-search-btn");
 const searchChips = document.getElementById("search-chips");
 const searchSuggestions = document.getElementById("search-suggestions");
@@ -229,6 +230,14 @@ function applySearchValue(value, { render = true, focus = false } = {}) {
   scheduleContextSave();
 }
 
+function hideSearchSuggestions() {
+  if (!searchSuggestions) return;
+  searchSuggestions.innerHTML = "";
+  searchSuggestions.classList.add("hidden");
+  searchInput.setAttribute("aria-expanded", "false");
+  searchInput.removeAttribute("aria-activedescendant");
+}
+
 function renderSearchAssists() {
   if (searchError) {
     const firstError = compiledSearchQuery.errors[0];
@@ -308,8 +317,7 @@ function renderSearchAssists() {
         event.preventDefault();
         searchInput.focus();
         suppressSearchSuggestions = true;
-        searchSuggestions.classList.add("hidden");
-        searchInput.setAttribute("aria-expanded", "false");
+        hideSearchSuggestions();
       }
     });
     searchSuggestions.appendChild(button);
@@ -414,6 +422,9 @@ const queueController = QuickFoldersQueueController.create({
   sendMessage: QuickFoldersMessaging.send,
   onOpenChange(open) {
     if (responsiveLayout) responsiveLayout.noteManualQueueChange();
+    // At wide widths the queue participates in flex layout, so opening it can
+    // change grid column geometry without producing a window resize event.
+    requestAnimationFrame(() => itemCollection.render());
     QuickFoldersMessaging.send("queue-panel-open", {
       open,
       resize: !responsiveLayout || !responsiveLayout.isWide(),
@@ -1259,6 +1270,12 @@ if (searchInput) {
     renderSearchAssists();
   });
   searchInput.addEventListener("blur", () => setTimeout(renderSearchAssists, 0));
+}
+if (searchControl) {
+  searchControl.addEventListener("focusout", (event) => {
+    if (event.relatedTarget && searchControl.contains(event.relatedTarget)) return;
+    setTimeout(hideSearchSuggestions, 0);
+  });
 }
 
 // Clear search button handler

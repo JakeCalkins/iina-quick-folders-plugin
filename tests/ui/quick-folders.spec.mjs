@@ -25,6 +25,38 @@ test("renders the backend state without overflowing the default window", async (
   expect(geometry).toEqual({ bodyWidth: 500, clientWidth: 500, paneLeft: 0, scrollWidth: 500 });
 });
 
+test("keeps search usable throughout narrow window widths", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 480 });
+  await openQuickFolders(page);
+
+  for (const width of [320, 361, 380, 420]) {
+    await page.setViewportSize({ width, height: width === 320 ? 480 : 600 });
+    const geometry = await page.evaluate(() => {
+      const search = document.querySelector(".search-control").getBoundingClientRect();
+      const input = document.querySelector("#search-input").getBoundingClientRect();
+      const filter = document.querySelector("#filter-dropdown").getBoundingClientRect();
+      return {
+        inputWidth: input.width,
+        searchWidth: search.width,
+        filterBelowSearch: filter.top >= search.bottom,
+        viewportFits: document.documentElement.scrollWidth === document.documentElement.clientWidth,
+      };
+    });
+    expect(geometry.inputWidth, `search input at ${width}px`).toBeGreaterThan(180);
+    expect(geometry.searchWidth, `search control at ${width}px`).toBeGreaterThanOrEqual(width - 30);
+    expect(geometry.filterBelowSearch, `filter placement at ${width}px`).toBe(true);
+    expect(geometry.viewportFits, `viewport overflow at ${width}px`).toBe(true);
+  }
+});
+
+test("exercises normal and reduced-motion appearance projects", async ({ page }, testInfo) => {
+  await openQuickFolders(page);
+  const prefersReducedMotion = await page.evaluate(() => (
+    matchMedia("(prefers-reduced-motion: reduce)").matches
+  ));
+  expect(prefersReducedMotion).toBe(testInfo.project.name.includes("reduced-motion"));
+});
+
 test("keyboard focus, selection, playback, and queue commands follow the active row", async ({ page }) => {
   const state = createState();
   await openQuickFolders(page, createState({ items: state.items.slice(1) }));
@@ -75,6 +107,51 @@ test("search and file-type filters compose while folders remain navigable", asyn
   await search.fill("gamma");
   await expect(page.getByRole("option", { name: /Gamma Finale/ })).toBeVisible();
   await expect(page.getByRole("option", { name: /Alpha/ })).toHaveCount(0);
+
+  await search.fill("is:");
+  await page.keyboard.press("ArrowDown");
+  const activeSuggestion = page.getByRole("option", { name: /is:new/i });
+  await expect(activeSuggestion).toBeFocused();
+  await expect(search).toHaveAttribute("aria-activedescendant", await activeSuggestion.getAttribute("id"));
+  await page.keyboard.press("Escape");
+  await expect(search).toBeFocused();
+  await expect(search).toHaveAttribute("aria-expanded", "false");
+  await expect(search).not.toHaveAttribute("aria-activedescendant", /.+/);
+
+  await search.fill("");
+  await search.fill("is:");
+  await page.keyboard.press("ArrowDown");
+  const suggestionCount = await page.locator("#search-suggestions [role='option']").count();
+  for (let index = 0; index < suggestionCount; index++) await page.keyboard.press("Tab");
+  await expect(filter).toBeFocused();
+  await expect(page.locator("#search-suggestions")).toBeHidden();
+  await expect(search).toHaveAttribute("aria-expanded", "false");
+  await expect(search).not.toHaveAttribute("aria-activedescendant", /.+/);
+});
+
+test("recomputes grid geometry when the wide queue reopens", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await openQuickFolders(page);
+  const queuePanel = page.locator("#queue-panel");
+  await expect(queuePanel).toBeVisible();
+  await page.getByRole("button", { name: "Collapse queue" }).click();
+  await expect(queuePanel).toBeHidden();
+  await page.getByRole("button", { name: "Poster grid layout" }).click();
+  const columnsWithQueueClosed = await page.evaluate(() => Number(
+    getComputedStyle(document.querySelector("#item-list")).getPropertyValue("--item-columns"),
+  ));
+
+  await page.getByRole("button", { name: "Open queue (2)" }).click();
+  await expect(queuePanel).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => {
+    const list = document.querySelector("#item-list");
+    return Number(getComputedStyle(list).getPropertyValue("--item-columns"));
+  })).toBeLessThan(columnsWithQueueClosed);
+  const cardGeometry = await page.locator("#item-list .row").first().evaluate((row) => ({
+    cardWidth: row.getBoundingClientRect().width,
+    thumbnailWidth: row.querySelector(".thumb").getBoundingClientRect().width,
+  }));
+  expect(cardGeometry.cardWidth).toBeGreaterThanOrEqual(cardGeometry.thumbnailWidth + 12);
 });
 
 test("queue controls distinguish collapse from removal and emit exact actions", async ({ page }) => {

@@ -135,3 +135,36 @@ test("waits for late folder autoload to settle before rebuilding the queue", asy
   assert.equal(removals, 1);
   assert.deepEqual(items.map((item) => item.filename), paths);
 });
+
+test("rechecks authorization before native open and playlist mutation", async () => {
+  let opened = false;
+  const playback = QueuePlayback.create({
+    authorize: async () => false,
+    core: { open() { opened = true; } },
+    playlist: { list() { return []; }, play() {} },
+    wait: async () => {},
+  });
+
+  await assert.rejects(playback.start(["/media/link/movie.mkv"]), /safely accessible/);
+  assert.equal(opened, false);
+});
+
+test("uses one bulk authorization before opening a queue", async () => {
+  const authorizationCalls = [];
+  let opened = false;
+  const paths = ["/media/a.mp4", "/media/b.mkv"];
+  const playback = QueuePlayback.create({
+    authorize: async () => { throw new Error("per-item authorization should not run"); },
+    authorizeAll: async (items) => {
+      authorizationCalls.push(items.slice());
+      return false;
+    },
+    core: { open() { opened = true; } },
+    playlist: { list() { return []; }, play() {} },
+    wait: async () => {},
+  });
+
+  await assert.rejects(playback.start(paths), /safely accessible/);
+  assert.deepEqual(authorizationCalls, [[paths[0]]]);
+  assert.equal(opened, false);
+});

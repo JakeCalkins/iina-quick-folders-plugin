@@ -2846,6 +2846,10 @@ button:focus-visible,
 @media (max-width: 420px) {
   .queue-panel { width: 100%; }
 
+  .search-bar { flex-wrap: wrap; }
+
+  .search-control { flex-basis: 100%; }
+
   .add-btn {
     width: 34px;
     padding: 0;

@@ -6,6 +6,7 @@ test("main entry persists watched state and trashes only validated files", async
   const indexPath = "@data/quick-folders-index.json";
   const playbackPath = "@data/quick-folders-playback.json";
   const existing = new Set(["/media/a.mp4", "/media/b.mkv", "/media/failure.mov", "/media/stuck.mp4"]);
+  const symlinkComponents = new Set();
   let persistedState = JSON.stringify({
     folderRoots: [{ path: "/media", name: "media" }],
     fileIndex: {
@@ -21,6 +22,7 @@ test("main entry persists watched state and trashes only validated files", async
     version: 2,
   });
   let persistedIndex = "";
+  let indexWriteCount = 0;
   let persistedPlayback = JSON.stringify({
     version: 1,
     records: {
@@ -45,7 +47,9 @@ test("main entry persists watched state and trashes only validated files", async
   const scheduledCallbacks = [];
   const indexMarkers = new Map();
   const markerAdjustments = [];
+  const findArguments = [];
   const findResults = [];
+  const preferenceValues = { hideWatched: true };
   const directoryListings = new Map([["/media", [
     { filename: "a.mp4", path: "/media/a.mp4", isDir: false },
     { filename: "b.mkv", path: "/media/b.mkv", isDir: false },
@@ -74,7 +78,10 @@ test("main entry persists watched state and trashes only validated files", async
     },
     write(path, content) {
       if (path === statePath) persistedState = content;
-      if (path === indexPath) persistedIndex = content;
+      if (path === indexPath) {
+        persistedIndex = content;
+        indexWriteCount++;
+      }
       if (path === playbackPath) persistedPlayback = content;
       if (path.startsWith("@data/quick-folders-index-marker-")) indexMarkers.set(path, content);
     },
@@ -119,7 +126,14 @@ test("main entry persists watched state and trashes only validated files", async
     global: {
       getLabel() { return null; },
       onMessage(type, callback) { globalHandlers.set(type, callback); },
-      postMessage(...args) { globalMessages.push(args); },
+      postMessage(...args) {
+        if (args[0] === "quick-folders-state-lock-request") {
+          globalHandlers.get("quick-folders-state-lock-granted")?.({ requestId: args[1].requestId });
+          return;
+        }
+        if (args[0] === "quick-folders-state-lock-release") return;
+        globalMessages.push(args);
+      },
     },
     file: fileApi,
     utils: {
@@ -135,11 +149,21 @@ test("main entry persists watched state and trashes only validated files", async
         return path;
       },
       async exec(path, args) {
+        if (path === "/usr/bin/stat") {
+          return {
+            status: 0,
+            stdout: `${args.slice(2).map((candidate) => (
+              symlinkComponents.has(candidate) ? "120755" : "40755"
+            )).join("\n")}\n`,
+            stderr: "",
+          };
+        }
         if (path === "/usr/bin/touch") {
           markerAdjustments.push(args);
           return { status: 0, stdout: "", stderr: "" };
         }
         if (path === "/usr/bin/find") {
+          findArguments.push(args);
           return findResults.shift() || { status: 0, stdout: "", stderr: "" };
         }
         executedTools.push(path);
@@ -166,7 +190,7 @@ test("main entry persists watched state and trashes only validated files", async
         };
       },
     },
-    preferences: { get(key) { return key === "hideWatched" ? true : undefined; } },
+    preferences: { get(key) { return preferenceValues[key]; } },
     menu: {
       item(title, callback, options = {}) {
         menuCallbacks.set(title, callback);
@@ -189,6 +213,7 @@ test("main entry persists watched state and trashes only validated files", async
   };
 
   const realSetTimeout = global.setTimeout;
+  const realClearTimeout = global.clearTimeout;
   const realSetInterval = global.setInterval;
   global.setTimeout = (callback, milliseconds) => {
     // Queue playback deliberately samples native playlist stability; resolve
@@ -197,23 +222,36 @@ test("main entry persists watched state and trashes only validated files", async
     if (milliseconds === 0 || milliseconds === 250) scheduledCallbacks.push(callback);
     return scheduledCallbacks.length;
   };
+  global.clearTimeout = () => {};
   global.setInterval = () => 0;
   try {
     delete require.cache[require.resolve("../main.js")];
     require("../main.js");
-    eventHandlers.get("iina.file-loaded")();
-    eventHandlers.get("iina.file-started")();
+    await eventHandlers.get("iina.file-started")();
+    await eventHandlers.get("iina.file-loaded")("/media/b.mkv");
     assert.deepEqual(seekPositions, [30]);
     global.iina.core.status.position = 45;
-    eventHandlers.get("mpv.pause.changed")();
+    await eventHandlers.get("mpv.pause.changed")();
     assert.equal(JSON.parse(persistedPlayback).records["/media/b.mkv"].position, 45);
     global.iina.core.status.position = null;
-    eventHandlers.get("mpv.end-file")();
+    await eventHandlers.get("mpv.end-file")();
     assert.equal(
       JSON.parse(persistedPlayback).records["/media/b.mkv"].position,
       45,
       "an unavailable end-of-file position must not erase the last valid sample",
     );
+    global.iina.core.status = {
+      url: "/media/a.mp4", position: 0, duration: 200, isNetworkResource: false,
+    };
+    await eventHandlers.get("iina.file-started")();
+    global.iina.core.status.position = 2;
+    eventHandlers.get("mpv.time-pos.changed")();
+    assert.equal(JSON.parse(persistedPlayback).records["/media/b.mkv"].position, 45);
+    assert.equal(JSON.parse(persistedPlayback).records["/media/a.mp4"], undefined);
+    await eventHandlers.get("iina.file-loaded")("/media/a.mp4");
+    global.iina.core.status.position = 12;
+    await eventHandlers.get("mpv.pause.changed")();
+    assert.equal(JSON.parse(persistedPlayback).records["/media/a.mp4"].position, 12);
     assert.equal(menuItems.get("Open Quick Folders Window").keyBinding, "Meta+K");
     assert.equal(menuItems.get("Add Folder").keyBinding, "n");
     menuCallbacks.get("Open Quick Folders Window")();
@@ -228,7 +266,8 @@ test("main entry persists watched state and trashes only validated files", async
     assert.deepEqual(initialUpdate.queueItems.map((item) => item.path), ["/media/b.mkv"]);
 
     handlers.get("request-state")({ indexRevision: -1 });
-    assert.equal(Object.hasOwn(messages.filter((message) => message.type === "update-items").at(-1).data, "indexedFiles"), false);
+    const compactHandshake = messages.filter((message) => message.type === "update-items").at(-1).data;
+    assert.equal(Object.hasOwn(compactHandshake, "indexedFiles"), false);
     scheduledCallbacks.shift()();
     const forcedIndexUpdate = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.equal(Array.isArray(forcedIndexUpdate.indexedFiles), true);
@@ -236,7 +275,7 @@ test("main entry persists watched state and trashes only validated files", async
     const matchingIndexUpdate = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.equal(Object.hasOwn(matchingIndexUpdate, "indexedFiles"), false);
 
-    handlers.get("queue-add")({
+    await handlers.get("queue-add")({
       paths: ["/media/a.mp4", "/media/b.mkv", "/outside/movie.mp4"],
     });
     const queueAddResult = messages.filter((message) => message.type === "queue-action-result").at(-1).data;
@@ -250,7 +289,7 @@ test("main entry persists watched state and trashes only validated files", async
       "queue-only updates should not resend the complete file index",
     );
 
-    handlers.get("queue-reorder")({
+    await handlers.get("queue-reorder")({
       paths: ["/media/a.mp4"],
       targetPath: "/media/b.mkv",
       position: "before",
@@ -270,14 +309,14 @@ test("main entry persists watched state and trashes only validated files", async
       ["/media/a.mp4", "/media/b.mkv"],
     );
 
-    handlers.get("queue-remove")({ paths: ["/media/b.mkv"] });
+    await handlers.get("queue-remove")({ paths: ["/media/b.mkv"] });
     assert.deepEqual(JSON.parse(persistedState).queuePaths, ["/media/a.mp4"]);
     handlers.get("queue-panel-open")({ open: true });
     handlers.get("queue-panel-open")({ open: false });
     handlers.get("queue-panel-open")({ open: true, resize: false });
     assert.deepEqual(windowFrames.slice(-2), [[840, 600, null, null], [500, 600, null, null]]);
 
-    handlers.get("set-watched")({
+    await handlers.get("set-watched")({
       paths: ["/media/a.mp4", "/media/a.mp4", "/media/../secret.mp4", "/media/folder.mp4"],
       watched: true,
     });
@@ -288,7 +327,7 @@ test("main entry persists watched state and trashes only validated files", async
     const watchedUpdate = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.equal(Array.isArray(watchedUpdate.indexedFiles), true);
 
-    handlers.get("open-item")({ path: "@watched", isDir: true, isWatchedRoot: true });
+    await handlers.get("open-item")({ path: "@watched", isDir: true, isWatchedRoot: true });
     const watchedView = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.equal(watchedView.viewingWatched, true);
     assert.deepEqual(watchedView.items.map((item) => item.path), ["/media/a.mp4"]);
@@ -298,14 +337,15 @@ test("main entry persists watched state and trashes only validated files", async
     const returnedRoot = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.equal(returnedRoot.atRoot, true);
 
-    handlers.get("set-watched")({ paths: ["/media/b.mkv"], watched: true });
+    await handlers.get("set-watched")({ paths: ["/media/b.mkv"], watched: true });
     global.iina.core.status.url = "/media/b.mkv";
     global.iina.core.status.position = 0;
-    eventHandlers.get("iina.file-loaded")();
-    eventHandlers.get("iina.file-started")();
+    global.iina.core.status.duration = 100;
+    await eventHandlers.get("iina.file-started")();
+    await eventHandlers.get("iina.file-loaded")("/media/b.mkv");
     assert.equal(seekPositions.at(-1), 45, "manual watched state must not disable partial resume");
 
-    handlers.get("open-item")({ path: "/media", isDir: true });
+    await handlers.get("open-item")({ path: "/media", isDir: true });
     const openedRoot = messages.filter((message) => message.type === "update-items").at(-1).data;
     assert.equal(openedRoot.currentPath, "/media");
     assert.equal(openedRoot.currentRootPath, "/media");
@@ -333,6 +373,25 @@ test("main entry persists watched state and trashes only validated files", async
       mediaListCalls,
       listCallsBeforeNoChange,
       "an unchanged root should reconcile from the native change marker without relisting directories",
+    );
+    findArguments.slice(-2).forEach((args) => {
+      assert.equal(args.includes("-prune"), true, "native discovery must prune ignored subtrees");
+      assert.equal(args.includes("node_modules"), true);
+      assert.equal(args.includes(".*"), true);
+    });
+
+    const listCallsBeforePreferenceChange = mediaListCalls;
+    preferenceValues.maxIndexDepth = 4;
+    global.setTimeout = realSetTimeout;
+    await handlers.get("refresh-index")();
+    global.setTimeout = (callback, milliseconds) => {
+      if (milliseconds === 50) callback();
+      return 0;
+    };
+    assert.equal(
+      mediaListCalls,
+      listCallsBeforePreferenceChange + 1,
+      "a changed scan preference must force a full scan even when the filesystem is unchanged",
     );
 
     const markerAfterNoChange = JSON.parse(persistedIndex).roots["/media"].markerSlot;
@@ -364,15 +423,31 @@ test("main entry persists watched state and trashes only validated files", async
     };
     assert.equal(mediaListCalls, listCallsBeforeFindFailure + 1, "find failure must fall back to a full scan");
 
-    handlers.get("open-item")({ path: "/outside/movie.mp4", isDir: false });
-    handlers.get("open-item")({ path: "/media/b.mkv", isDir: false });
+    await handlers.get("open-item")({ path: "/outside/movie.mp4", isDir: false });
+    await handlers.get("open-item")({ path: "/media/b.mkv", isDir: false });
     assert.deepEqual(openedPaths, ["/media/b.mkv"]);
+
+    existing.add("/media/link/escape.mp4");
+    directoryListings.set("/media/link", [
+      { filename: "escape.mp4", path: "/media/link/escape.mp4", isDir: false },
+    ]);
+    symlinkComponents.add("/media/link");
+    await handlers.get("open-item")({ path: "/media/link/escape.mp4", isDir: false });
+    await handlers.get("queue-add")({ paths: ["/media/link/escape.mp4"] });
+    await handlers.get("delete-items")({ paths: ["/media/link/escape.mp4"] });
+    assert.deepEqual(openedPaths, ["/media/b.mkv"], "symlink descendants must never reach core.open");
+    assert.equal(trashedPaths.includes("/media/link/escape.mp4"), false);
+    assert.equal(
+      messages.filter((message) => message.type === "queue-action-result").at(-1).data.failed.length,
+      1,
+    );
 
     handlers.get("request-thumbnail")({ path: "/media/b.mkv" });
     const immediateThumbnail = messages.filter((message) => message.type === "thumbnail-ready").at(-1);
     assert.equal(immediateThumbnail.data.path, "/media/b.mkv");
     assert.match(immediateThumbnail.data.dataUrl, /^data:image\/svg\+xml;base64,/);
 
+    const writesBeforeMetadata = indexWriteCount;
     handlers.get("request-media-metadata")({ path: "/media/b.mkv" });
     await new Promise((resolve) => realSetTimeout(resolve, 0));
     const metadataResult = messages.filter((message) => message.type === "media-metadata-ready").at(-1);
@@ -392,6 +467,9 @@ test("main entry persists watched state and trashes only validated files", async
       },
     });
     assert.deepEqual(executedTools, ["/usr/bin/mdls", "/opt/homebrew/bin/ffprobe"]);
+    assert.equal(indexWriteCount, writesBeforeMetadata, "metadata persistence must wait for its trailing flush");
+    await eventHandlers.get("iina.window-will-close")();
+    assert.equal(indexWriteCount, writesBeforeMetadata + 1, "window close must flush pending metadata");
 
     findResults.push(
       { status: 0, stdout: "", stderr: "" },
@@ -410,7 +488,7 @@ test("main entry persists watched state and trashes only validated files", async
       "/opt/homebrew/bin/ffprobe",
     ]);
 
-    handlers.get("delete-items")({
+    await handlers.get("delete-items")({
       paths: ["/media/a.mp4", "/outside/b.mkv", "/media/failure.mov", "/media/stuck.mp4"],
     });
     const deleteResult = messages.filter((message) => message.type === "item-action-result").at(-1).data;
@@ -431,8 +509,17 @@ test("main entry persists watched state and trashes only validated files", async
       "/media/Moved/new.mp4",
       "/media/stuck.mp4",
     ]);
+
+    for (const messageName of [
+      "open-item", "request-state", "navigate-to", "set-watched", "delete-items",
+      "queue-add", "queue-remove", "queue-reorder", "queue-panel-open", "remove-root",
+      "save-browser-context", "continue-series",
+    ]) {
+      await handlers.get(messageName)(null);
+    }
   } finally {
     global.setTimeout = realSetTimeout;
+    global.clearTimeout = realClearTimeout;
     global.setInterval = realSetInterval;
     delete global.iina;
   }

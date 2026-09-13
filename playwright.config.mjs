@@ -12,16 +12,20 @@ export default defineConfig({
   use: {
     baseURL,
     colorScheme: "dark",
-    reducedMotion: "reduce",
+    reducedMotion: "no-preference",
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
     viewport: { width: 500, height: 600 },
   },
-  projects: ["dark", "light"].map((colorScheme) => ({
-    name: `webkit-${colorScheme}`,
+  projects: [
+    { colorScheme: "dark", name: "webkit-dark", reducedMotion: "no-preference" },
+    { colorScheme: "light", name: "webkit-light-reduced-motion", reducedMotion: "reduce" },
+  ].map(({ colorScheme, name, reducedMotion }) => ({
+    name,
     use: {
       ...devices["Desktop Safari"],
       colorScheme,
+      reducedMotion,
       viewport: { width: 500, height: 600 },
     },
   })),
