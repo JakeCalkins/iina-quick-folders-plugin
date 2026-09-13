@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [2.7.0] - 2026-09-12
+
 ### Added
 - Added a responsive wide-window layout with Finder-style ancestor columns and an automatically revealed queue pane
 
