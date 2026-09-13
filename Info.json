@@ -1,14 +1,14 @@
 {
   "name": "Quick Folders",
   "identifier": "com.jakecalkins.quickfolders",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "description": "Adds a Quick Folders window to browse and open local folders quickly. Navigate your media library with customizable filters, keyboard shortcuts, and deep folder indexing.",
   "author": {
     "name": "JakeCalkins",
     "url": "https://github.com/JakeCalkins/iina-quick-folders-plugin"
   },
   "ghRepo": "JakeCalkins/iina-quick-folders-plugin",
-  "ghVersion": 8,
+  "ghVersion": 9,
   "entry": "main.js",
   "global": "global.js",
   "permissions": [

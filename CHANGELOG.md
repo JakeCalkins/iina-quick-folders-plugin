@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_No unreleased changes yet._
+
+## [2.6.1] - 2026-09-12
+
 ### Changed
 - Refined search with an inline shortcut hint, focus-revealed syntax tips, an in-field clear button, adjacent file filtering, and a labeled queue control
 - Made keyboard browsing flow from search into results, with selection, playback, parent navigation, range selection, and queue actions available without the mouse
