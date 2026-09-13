@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Prevented a newly loaded title from overwriting the preceding title's progress during file transitions
 - Kept command-palette focus restoration from stealing focus from commands that open another dialog or focus search
+- Made the keyboard navigation cursor visibly follow the focused media row
+- Distinguished queue collapse from destructive remove controls, kept the drag-to-queue label unclipped, and removed stray outer window gutters
 
 ## [2.7.0] - 2026-09-12
 

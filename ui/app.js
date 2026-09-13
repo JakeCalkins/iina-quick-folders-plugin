@@ -1150,7 +1150,9 @@ function renderItems({ preservePending = false } = {}) {
     onFocusItem(item) {
       focusedPath = item.path;
       itemListEl.querySelectorAll(".row[data-path]").forEach((row) => {
-        row.tabIndex = row.dataset.path === focusedPath ? 0 : -1;
+        const isFocused = row.dataset.path === focusedPath;
+        row.tabIndex = isFocused ? 0 : -1;
+        row.classList.toggle("focused", isFocused);
       });
       scheduleContextSave();
     },

@@ -627,7 +627,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 12px 14px;
+  padding: 0;
   -webkit-app-region: no-drag;
   user-select: none;
   -webkit-user-select: none;
@@ -660,13 +660,13 @@ body {
   position: relative;
   z-index: 10;
   isolation: isolate;
-  padding-bottom: 10px;
+  padding: 12px 14px 10px;
 }
 
 .nav-bar::before {
   content: "";
   position: absolute;
-  inset: -12px -14px 0;
+  inset: 0;
   z-index: -1;
   pointer-events: none;
   background: var(--chrome-bg);
@@ -854,7 +854,7 @@ body {
 .divider {
   height: 1px;
   min-height: 1px;
-  margin: 0 -14px;
+  margin: 0;
   border: 0;
   background: var(--divider);
   position: relative;
@@ -1206,15 +1206,17 @@ body {
 }
 
 .dragging-media .queue-bucket {
-  width: 120px;
-  flex-basis: 120px;
+  width: 124px;
+  flex-basis: 124px;
   gap: 6px;
+  padding-right: 7px;
+  padding-left: 7px;
 }
 
 .dragging-media .queue-label { display: none; }
 
 .dragging-media .queue-drop-label {
-  max-width: 78px;
+  max-width: 86px;
   opacity: 1;
 }
 
@@ -1896,6 +1898,15 @@ body {
   background: var(--row-accent-hover);
 }
 
+.row.focused {
+  background: var(--row-accent-hover);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.row.selected.focused {
+  background: var(--accent-strong-bg);
+}
+
 .thumb {
   width: 44px;
   height: 44px;
@@ -2269,7 +2280,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 10px 0;
+  padding: 10px 14px 12px;
   border-top: 0;
   box-shadow: none;
   margin-top: 0;
@@ -2283,7 +2294,7 @@ body {
 .footer::before {
   content: "";
   position: absolute;
-  inset: 0 -14px -12px;
+  inset: 0;
   z-index: -1;
   pointer-events: none;
   background: var(--chrome-bg);
@@ -2296,8 +2307,8 @@ body {
   content: "";
   position: absolute;
   top: 0;
-  left: -14px;
-  right: -14px;
+  left: 0;
+  right: 0;
   height: 1px;
   pointer-events: none;
   background: var(--divider);
@@ -2432,7 +2443,6 @@ body {
   cursor: default;
 }
 
-.queue-close-btn,
 .queue-remove-btn {
   width: 26px;
   height: 26px;
@@ -2442,17 +2452,43 @@ body {
   line-height: 1;
 }
 
+.queue-close-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+}
+
+.queue-close-btn svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .queue-remove-btn,
 #queue-remove-selected-btn {
   color: var(--remove-hover-color);
   background: var(--remove-hover-bg);
 }
 
-.queue-close-btn:hover,
 .queue-remove-btn:hover {
   color: var(--remove-hover-color);
   background: var(--remove-hover-bg);
   transform: scale(1.06);
+}
+
+.queue-close-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-hover-bg);
+  transform: translateX(1px);
 }
 
 .queue-list {

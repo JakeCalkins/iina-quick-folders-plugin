@@ -81,12 +81,12 @@ function installFakeDom() {
   };
 }
 
-function createFileRow({ selected = false, isIndexing = false, item = null, layout = "list" } = {}) {
+function createFileRow({ selected = false, focused = true, isIndexing = false, item = null, layout = "list" } = {}) {
   const calls = { dragEnd: [], dragStart: [], focus: [], folders: [], move: [], open: [], select: [] };
   const rowItem = item || { name: "Example.mkv", path: "/media/Example.mkv", isDir: false };
   const row = ItemView.create(rowItem, {
     atRoot: false,
-    focusedPath: rowItem.path,
+    focusedPath: focused ? rowItem.path : null,
     hasSearchQuery: false,
     isIndexing,
     layout,
@@ -195,6 +195,7 @@ test("focused file rows use Enter for selection, Space for playback, and arrows 
     assert.equal(row.getAttribute("role"), "option");
     assert.equal(row.getAttribute("aria-selected"), "false");
     assert.equal(row.tabIndex, 0);
+    assert.equal(row.classList.contains("focused"), true);
 
     const enter = row.dispatch("keydown", { key: "Enter" });
     assert.deepEqual(calls.open, []);

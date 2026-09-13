@@ -178,6 +178,7 @@ const QuickFoldersItemView = (() => {
     row.tabIndex = options.focusedPath === item.path ? 0 : -1;
     row.classList.toggle("directory", Boolean(item.isDir));
     row.classList.toggle("watched", Boolean(playback && playback.state === "watched"));
+    row.classList.toggle("focused", options.focusedPath === item.path);
     row.classList.toggle("selected", isSelected);
     row.classList.toggle("unavailable", Boolean(item.unavailable));
 
