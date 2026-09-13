@@ -866,31 +866,145 @@ body {
   min-width: 0;
 }
 
-.search-input {
-  flex: 1;
+.search-control {
+  position: relative;
+  flex: 1 1 auto;
   min-width: 0;
-  padding: 8px 16px;
+}
+
+.search-field {
+  min-width: 0;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 7px 0 9px;
   background: var(--chip-bg);
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: 17px;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 170ms ease;
+}
+
+.search-field:hover {
+  border-color: var(--button-border);
+  background: var(--row-hover);
+}
+
+.search-field:focus-within {
+  border-color: var(--accent);
+  background: var(--accent-focus-bg);
+  box-shadow: 0 0 8px var(--accent-focus-shadow);
+}
+
+.search-shortcut {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--button-border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  font: 650 11px/1 -apple-system, "SF Pro Text", sans-serif;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.16);
+}
+
+.search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  background: transparent;
+  border: 0;
   color: var(--text);
   font-size: 13px;
   font-family: inherit;
-  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 170ms ease, transform 150ms ease;
   user-select: text;
   -webkit-user-select: text;
 }
 
+.search-input:focus { outline: none; }
+
+.search-input::placeholder { color: var(--muted); }
+
+.search-capabilities {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 9px);
+  z-index: 20;
+  width: min(360px, calc(100vw - 28px));
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 12px;
+  padding: 11px 12px 12px;
+  border: 1px solid var(--button-border);
+  border-radius: 12px;
+  background: var(--queue-panel-bg);
+  color: var(--muted);
+  box-shadow: 0 10px 28px var(--chrome-shadow);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  font-size: 10px;
+  line-height: 1.35;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(8px);
+  transform-origin: left bottom;
+  transition: opacity 150ms ease, transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s linear 180ms;
+}
+
+.search-capabilities::after {
+  content: "";
+  position: absolute;
+  left: 20px;
+  bottom: -5px;
+  width: 8px;
+  height: 8px;
+  border-right: 1px solid var(--button-border);
+  border-bottom: 1px solid var(--button-border);
+  background: var(--queue-panel-bg);
+  transform: rotate(45deg);
+}
+
+.search-control:focus-within .search-capabilities {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition-delay: 0s;
+}
+
+.search-capabilities-title {
+  grid-column: 1 / -1;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.search-capabilities code {
+  display: inline-block;
+  margin-right: 3px;
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--chip-bg);
+  color: var(--text);
+  font: 600 10px/1.2 ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
 .queue-bucket {
-  width: 34px;
+  min-width: 78px;
   height: 34px;
-  flex: 0 0 34px;
+  flex: 0 0 auto;
   position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0;
-  padding: 0;
+  gap: 6px;
+  padding: 0 11px 0 9px;
   border: 1px solid var(--button-border);
   border-radius: 10px;
   background: var(--chip-bg);
@@ -912,16 +1026,20 @@ body {
   pointer-events: none;
 }
 
+.queue-label,
 .queue-drop-label {
-  max-width: 0;
-  overflow: hidden;
-  opacity: 0;
   color: currentColor;
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
   pointer-events: none;
+}
+
+.queue-drop-label {
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
   transition: max-width 180ms ease, opacity 120ms ease;
 }
 
@@ -975,6 +1093,8 @@ body {
   flex-basis: 120px;
   gap: 6px;
 }
+
+.dragging-media .queue-label { display: none; }
 
 .dragging-media .queue-drop-label {
   max-width: 78px;
@@ -1064,28 +1184,12 @@ body {
   font-weight: 800;
 }
 
-.search-input:hover {
-  border-color: var(--button-border);
-  background: var(--row-hover);
-}
-
-.search-input::placeholder {
-  color: var(--muted);
-}
-
-.search-input:focus {
-  outline: none;
-  border-color: var(--accent);
-  background: var(--accent-focus-bg);
-  box-shadow: 0 0 8px var(--accent-focus-shadow);
-}
-
 .clear-btn {
-  background: rgba(255, 255, 255, 0.1);
+  background: transparent;
   border: none;
-  color: var(--text);
-  width: 32px;
-  height: 32px;
+  color: var(--muted);
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   cursor: pointer;
   font-size: 14px;
@@ -1097,28 +1201,10 @@ body {
   line-height: 0;
 }
 
-@media (prefers-color-scheme: light) {
-  .clear-btn {
-    background: rgba(0, 0, 0, 0.08);
-    border: 1px solid rgba(0, 0, 0, 0.12);
-  }
-}
-
 .clear-btn:hover {
   background: var(--clear-hover-bg);
   color: var(--clear-hover-color);
   transform: rotate(8deg) scale(1.04);
-}
-
-.clear-btn:disabled {
-  opacity: 0.38;
-  cursor: default;
-}
-
-.clear-btn:disabled:hover {
-  background: var(--chip-bg);
-  color: var(--muted);
-  transform: none;
 }
 
 .clear-btn:active {
@@ -2076,7 +2162,6 @@ body {
 
 button:focus-visible,
 .filter-dropdown:focus-visible,
-.search-input:focus-visible,
 .breadcrumb-parent:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -2104,12 +2189,11 @@ button:focus-visible,
     color: #9a4d00;
   }
 
-  .search-input:focus {
+  .search-field:focus-within {
     background: rgba(0, 122, 255, 0.08);
     box-shadow: 0 0 8px rgba(0, 122, 255, 0.2);
   }
 
-  .clear-btn,
   .remove-btn {
     background: rgba(0, 0, 0, 0.08);
     border: 1px solid rgba(0, 0, 0, 0.12);
@@ -2224,7 +2308,10 @@ button:focus-visible,
   .header-buttons,
   .search-bar { gap: 6px; }
 
-  .search-input { padding-inline: 11px; }
+  .search-field {
+    gap: 5px;
+    padding-left: 7px;
+  }
 
   .filter-dropdown {
     max-width: 92px;

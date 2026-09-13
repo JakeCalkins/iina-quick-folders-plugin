@@ -109,8 +109,8 @@ const QuickFoldersItemView = (() => {
       ? `Open folder ${item.name}`
       : `${QuickFoldersView.getDisplayName(item)}, ${isSelected ? "selected" : "not selected"}`);
     row.title = item.isDir
-      ? "Open folder"
-      : "Open file, or drag to the queue. Hold Command, Control, or Shift to select.";
+      ? "Open folder with Enter or Space"
+      : "Space to play, Enter to select, or Q to add to the queue.";
     row.draggable = !item.isDir;
     row.tabIndex = options.focusedPath === item.path ? 0 : -1;
     row.classList.toggle("watched", Boolean(item.watched));
@@ -157,16 +157,18 @@ const QuickFoldersItemView = (() => {
       });
     }
     row.addEventListener("keydown", (event) => {
+      if (event.target !== row) return;
       const hasCommandModifier = event.metaKey || event.ctrlKey || event.altKey;
       if (event.key === "Enter" && !hasCommandModifier) {
         event.preventDefault();
         event.stopPropagation();
         if (item.isDir) options.onOpenFolder(item);
-        else options.onOpenFile(item);
-      } else if (!item.isDir && (event.key === " " || event.key === "Spacebar")) {
+        else options.onSelectFile(item, event, { additive: true, restoreFocus: true });
+      } else if (!hasCommandModifier && (event.key === " " || event.key === "Spacebar")) {
         event.preventDefault();
         event.stopPropagation();
-        options.onSelectFile(item, event, { additive: true, restoreFocus: true });
+        if (item.isDir) options.onOpenFolder(item);
+        else options.onOpenFile(item);
       } else if (!hasCommandModifier && ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         event.preventDefault();
         event.stopPropagation();

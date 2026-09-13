@@ -94,6 +94,13 @@ let currentState = {
   viewingWatched: false,
 };
 
+function updateClearSearchButton() {
+  if (!clearSearchBtn) return;
+  const hasQuery = currentSearchQuery.length > 0;
+  clearSearchBtn.disabled = !hasQuery;
+  clearSearchBtn.classList.toggle("hidden", !hasQuery);
+}
+
 const mediaPreview = QuickFoldersMediaPreview.create({
   rootElement: itemListEl,
   sendMessage: QuickFoldersMessaging.send,
@@ -296,6 +303,14 @@ function focusItem(path) {
   row.focus();
 }
 
+function focusBrowseList() {
+  const target = renderedItems.find((item) => item.path === focusedPath) || renderedItems[0];
+  if (!target) return false;
+  focusedPath = target.path;
+  focusItem(target.path);
+  return true;
+}
+
 function moveItemFocus(item, key, { extendSelection = false } = {}) {
   const currentPath = item && item.path ? item.path : focusedPath;
   const target = QuickFoldersInteractions.getNavigationTarget(renderedItems, currentPath, key);
@@ -324,13 +339,19 @@ function moveItemFocus(item, key, { extendSelection = false } = {}) {
   return true;
 }
 
-function openFocusedOrSelectedItem() {
+function activateFocusedItem() {
   const focusedItem = renderedItems.find((item) => item.path === focusedPath);
-  const selectedItems = getSelectedItems();
-  const item = focusedItem || (selectedItems.length === 1 ? selectedItems[0] : null);
-  if (!item) return false;
-  if (item.isDir) interactions.openFolder(item);
-  else QuickFoldersMessaging.send("open-item", { path: item.path, isDir: false });
+  if (!focusedItem) return false;
+  if (focusedItem.isDir) interactions.openFolder(focusedItem);
+  else QuickFoldersMessaging.send("open-item", { path: focusedItem.path, isDir: false });
+  return true;
+}
+
+function selectFocusedItem(event) {
+  const focusedItem = renderedItems.find((item) => item.path === focusedPath);
+  if (!focusedItem) return false;
+  if (focusedItem.isDir) return interactions.openFolder(focusedItem);
+  selectItem(focusedItem, event, { additive: true, restoreFocus: true });
   return true;
 }
 
@@ -354,6 +375,17 @@ function addSelectedToQueue() {
   const items = getSelectedItems();
   if (items.length === 0) return;
   QuickFoldersMessaging.send("queue-add", { paths: items.map((item) => item.path) });
+}
+
+function addKeyboardItemsToQueue() {
+  const paths = QuickFoldersKeyboard.getQueuePaths(
+    renderedItems,
+    Array.from(selectedPaths),
+    focusedPath,
+  );
+  if (paths.length === 0) return false;
+  QuickFoldersMessaging.send("queue-add", { paths });
+  return true;
 }
 
 function setSelectedWatched() {
@@ -471,7 +503,7 @@ function resetSearch({ focus = false, render = false } = {}) {
     searchInput.value = "";
     if (focus) searchInput.focus();
   }
-  if (clearSearchBtn) clearSearchBtn.disabled = true;
+  updateClearSearchButton();
   if (render) renderItems();
 }
 
@@ -716,13 +748,24 @@ if (searchInput) {
   searchInput.addEventListener("input", (e) => {
     clearSelection(false);
     currentSearchQuery = e.target.value;
-    if (clearSearchBtn) clearSearchBtn.disabled = currentSearchQuery.length === 0;
+    updateClearSearchButton();
     compiledSearchQuery = QuickFoldersSearch.compileQuery(currentSearchQuery);
     if (searchRenderTimer) clearTimeout(searchRenderTimer);
     searchRenderTimer = setTimeout(() => {
       searchRenderTimer = null;
       renderItems();
     }, 60);
+  });
+  searchInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    if (searchRenderTimer) {
+      clearTimeout(searchRenderTimer);
+      searchRenderTimer = null;
+      renderItems();
+    }
+    searchInput.blur();
+    focusBrowseList();
   });
 }
 
@@ -793,6 +836,14 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
+  if (event.key === "ArrowLeft" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+    if (!currentState.atRoot) {
+      event.preventDefault();
+      interactions.goBack();
+    }
+    return;
+  }
+
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
     event.preventDefault();
     const paths = getSelectableItems().map((item) => item.path);
@@ -812,12 +863,13 @@ document.addEventListener("keydown", (event) => {
       setSelectedWatched();
     }
   } else if (event.key.toLowerCase() === "q" && !event.metaKey && !event.ctrlKey && !event.altKey) {
-    if (selectedPaths.size > 0) {
+    if (addKeyboardItemsToQueue()) {
       event.preventDefault();
-      addSelectedToQueue();
     }
   } else if (event.key === "Enter" && !hasCommandModifier) {
-    if (openFocusedOrSelectedItem()) event.preventDefault();
+    if (selectFocusedItem(event)) event.preventDefault();
+  } else if (!hasCommandModifier && (event.key === " " || event.key === "Spacebar")) {
+    if (activateFocusedItem()) event.preventDefault();
   }
 });
 
