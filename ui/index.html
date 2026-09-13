@@ -58,28 +58,32 @@
           </div>
         </div>
         <div id="search-bar" class="search-bar hidden">
-          <input 
-            type="text" 
-            id="search-input" 
-            class="search-input" 
-            placeholder="Search files (try ext:mp4)..."
-            aria-label="Search files"
-            aria-keyshortcuts="/ Meta+F Control+F"
-            title='Fuzzy search. Use "quotes" for literals, * or ? as wildcards, - to exclude, and ext:mp4 for extensions.'
-          />
-          <button id="clear-search-btn" class="clear-btn" type="button" title="Clear search" disabled>
-            <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M2 2L10 10M10 2L2 10" stroke="currentColor"/>
-            </svg>
-          </button>
-          <button id="queue-bucket" class="queue-bucket" type="button" title="Queue is empty — drop media here" aria-label="Queue is empty — drop media here" aria-controls="queue-panel" aria-expanded="false">
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M5 5.5h8M5 10h8M5 14.5h5" />
-              <path d="M15 12v5m-2.5-2.5L15 17l2.5-2.5" />
-            </svg>
-            <span class="queue-drop-label" aria-hidden="true">Drop to queue</span>
-            <span id="queue-badge" class="queue-badge hidden">0</span>
-          </button>
+          <div class="search-control">
+            <div id="search-capabilities" class="search-capabilities" role="tooltip">
+              <span class="search-capabilities-title">Search tips</span>
+              <span><code>ext:mkv</code> file type</span>
+              <span><code>"final cut"</code> exact phrase</span>
+              <span><code>trail*</code> wildcard</span>
+              <span><code>-sample</code> exclude</span>
+            </div>
+            <div class="search-field">
+              <kbd class="search-shortcut" aria-hidden="true">/</kbd>
+              <input
+                type="text"
+                id="search-input"
+                class="search-input"
+                placeholder="Search…"
+                aria-label="Search files"
+                aria-describedby="search-capabilities"
+                aria-keyshortcuts="/ Meta+F Control+F"
+              />
+              <button id="clear-search-btn" class="clear-btn hidden" type="button" title="Clear search" aria-label="Clear search" disabled>
+                <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M2 2L10 10M10 2L2 10" stroke="currentColor"/>
+                </svg>
+              </button>
+            </div>
+          </div>
           <select id="filter-dropdown" class="filter-dropdown" aria-label="Filter by file type">
             <option value="all">All Files</option>
             <optgroup id="video-group" label="Video"></optgroup>
@@ -87,6 +91,15 @@
             <optgroup id="image-group" label="Image"></optgroup>
             <optgroup id="other-group" label="Other"></optgroup>
           </select>
+          <button id="queue-bucket" class="queue-bucket" type="button" title="Queue is empty — drop media here" aria-label="Queue is empty — drop media here" aria-controls="queue-panel" aria-expanded="false">
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M5 5.5h8M5 10h8M5 14.5h5" />
+              <path d="M15 12v5m-2.5-2.5L15 17l2.5-2.5" />
+            </svg>
+            <span class="queue-label" aria-hidden="true">Queue</span>
+            <span class="queue-drop-label" aria-hidden="true">Drop to queue</span>
+            <span id="queue-badge" class="queue-badge hidden">0</span>
+          </button>
         </div>
       </footer>
     </main>
@@ -153,9 +166,11 @@
             <h3 id="shortcut-browse-title">Browse &amp; search</h3>
             <dl>
               <div class="shortcut-row"><dt><kbd>⌘/Ctrl F</kbd> <span class="shortcut-or">or</span> <kbd>/</kbd></dt><dd>Focus search</dd></div>
+              <div class="shortcut-row"><dt><kbd>Return</kbd></dt><dd>Finish search and focus results</dd></div>
               <div class="shortcut-row"><dt><kbd>Click</kbd></dt><dd>Open a file or folder</dd></div>
               <div class="shortcut-row"><dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Move through items</dd></div>
-              <div class="shortcut-row"><dt><kbd>Return</kbd></dt><dd>Open the focused file</dd></div>
+              <div class="shortcut-row"><dt><kbd>←</kbd></dt><dd>Go up one folder</dd></div>
+              <div class="shortcut-row"><dt><kbd>Space</kbd></dt><dd>Play a file or open a folder</dd></div>
               <div class="shortcut-row"><dt><kbd>Esc</kbd></dt><dd>Clear selection or close a dialog</dd></div>
             </dl>
           </section>
@@ -163,10 +178,10 @@
             <h3 id="shortcut-select-title">Select &amp; manage</h3>
             <dl>
               <div class="shortcut-row"><dt><kbd>⌘/Ctrl A</kbd></dt><dd>Select all visible files</dd></div>
-              <div class="shortcut-row"><dt><kbd>Space</kbd></dt><dd>Toggle the focused file</dd></div>
+              <div class="shortcut-row"><dt><kbd>Return</kbd></dt><dd>Toggle the focused file</dd></div>
               <div class="shortcut-row"><dt><kbd>Shift ↑</kbd> <kbd>Shift ↓</kbd></dt><dd>Extend selection</dd></div>
               <div class="shortcut-row"><dt><kbd>Drag</kbd></dt><dd>Add one or more selected items to the queue</dd></div>
-              <div class="shortcut-row"><dt><kbd>Q</kbd></dt><dd>Add selected items to the queue</dd></div>
+              <div class="shortcut-row"><dt><kbd>Q</kbd></dt><dd>Queue the selection or focused file</dd></div>
               <div class="shortcut-row"><dt><kbd>⌘/Ctrl Click</kbd></dt><dd>Toggle one file</dd></div>
               <div class="shortcut-row"><dt><kbd>Shift Click</kbd></dt><dd>Select a range</dd></div>
               <div class="shortcut-row"><dt><kbd>W</kbd></dt><dd>Mark watched or unwatched</dd></div>

@@ -82,7 +82,7 @@ Choose the relevant scenarios for your change:
 - Combine fuzzy search with file-extension filters
 - Refresh a large index and confirm the UI remains responsive
 - Resize through 500×600, 420×600, 360×500, and 320×480; confirm controls remain visible and the queue overlays cleanly at narrow widths
-- Verify plain-click playback plus modifier, range, Space-key, and select-all selection behavior
+- Verify plain-click playback plus Enter toggle-selection, Shift-arrow ranges, Space-key playback, and select-all behavior
 - Mark watched/unwatched items and exercise the Watched view
 - Open media and verify thumbnail and metadata loading
 - Confirm moving files to Trash with both success and failure cases

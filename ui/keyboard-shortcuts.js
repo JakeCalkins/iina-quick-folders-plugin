@@ -113,7 +113,18 @@ const QuickFoldersKeyboard = (() => {
     return keys.length > 0 ? keys.join(" ") : fallback;
   }
 
-  return { formatShortcut, normalizeMenuShortcut, resolveMenuShortcut };
+  function getQueuePaths(items, selectedPaths, focusedPath) {
+    const files = (Array.isArray(items) ? items : [])
+      .filter((item) => item && !item.isDir && typeof item.path === "string");
+    const selected = new Set(Array.isArray(selectedPaths) ? selectedPaths : []);
+    const selectedInOrder = files.filter((item) => selected.has(item.path)).map((item) => item.path);
+    if (selectedInOrder.length > 0) return selectedInOrder;
+
+    const focused = files.find((item) => item.path === focusedPath);
+    return focused ? [focused.path] : [];
+  }
+
+  return { formatShortcut, getQueuePaths, normalizeMenuShortcut, resolveMenuShortcut };
 })();
 
 if (typeof module !== "undefined") {

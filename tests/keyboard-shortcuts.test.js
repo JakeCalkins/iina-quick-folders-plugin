@@ -26,3 +26,20 @@ test("rejects malformed shortcuts and can fall back to a valid default", () => {
   assert.equal(keyboard.normalizeMenuShortcut("cmd+F13"), null);
   assert.equal(keyboard.resolveMenuShortcut("not-a-key", "cmd+shift+a"), "Meta+A");
 });
+
+test("keyboard queueing prefers selected files and falls back to the focused file", () => {
+  const items = [
+    { path: "/media/folder", isDir: true },
+    { path: "/media/a.mp4", isDir: false },
+    { path: "/media/b.mkv", isDir: false },
+    { path: "/media/c.mov", isDir: false },
+  ];
+
+  assert.deepEqual(
+    keyboard.getQueuePaths(items, ["/media/c.mov", "/media/a.mp4"], "/media/b.mkv"),
+    ["/media/a.mp4", "/media/c.mov"],
+  );
+  assert.deepEqual(keyboard.getQueuePaths(items, [], "/media/b.mkv"), ["/media/b.mkv"]);
+  assert.deepEqual(keyboard.getQueuePaths(items, [], "/media/folder"), []);
+  assert.deepEqual(keyboard.getQueuePaths(null, null, null), []);
+});

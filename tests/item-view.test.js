@@ -80,20 +80,20 @@ function installFakeDom() {
   };
 }
 
-function createFileRow({ selected = false, isIndexing = false } = {}) {
-  const calls = { dragEnd: [], dragStart: [], focus: [], move: [], open: [], select: [] };
-  const item = { name: "Example.mkv", path: "/media/Example.mkv", isDir: false };
-  const row = ItemView.create(item, {
+function createFileRow({ selected = false, isIndexing = false, item = null } = {}) {
+  const calls = { dragEnd: [], dragStart: [], focus: [], folders: [], move: [], open: [], select: [] };
+  const rowItem = item || { name: "Example.mkv", path: "/media/Example.mkv", isDir: false };
+  const row = ItemView.create(rowItem, {
     atRoot: false,
-    focusedPath: item.path,
+    focusedPath: rowItem.path,
     hasSearchQuery: false,
     isIndexing,
     mediaPreview: { attachMetadata() {}, loadThumbnail() {} },
-    selectedPaths: new Set(selected ? [item.path] : []),
+    selectedPaths: new Set(selected ? [rowItem.path] : []),
     onFocusItem(entry) { calls.focus.push(entry.path); },
     onMoveFocus(entry, key, behavior) { calls.move.push([entry.path, key, behavior]); },
     onOpenFile(entry) { calls.open.push(entry.path); },
-    onOpenFolder() {},
+    onOpenFolder(entry) { calls.folders.push(entry.path); },
     onRemoveRoot() {},
     onDragFiles(entry) { calls.dragStart.push(entry.path); return [entry.path]; },
     onDragEnd(entry) { calls.dragEnd.push(entry.path); },
@@ -101,7 +101,7 @@ function createFileRow({ selected = false, isIndexing = false } = {}) {
       calls.select.push({ path: entry.path, behavior, shiftKey: event.shiftKey });
     },
   });
-  return { calls, item, row };
+  return { calls, item: rowItem, row };
 }
 
 test("file rows expose a drag source for the queue", () => {
@@ -186,7 +186,7 @@ test("modifier clicks and the visible selection indicator select without opening
   }
 });
 
-test("focused rows expose listbox state and support Enter, Space, and arrow keys", () => {
+test("focused file rows use Enter for selection, Space for playback, and arrows for navigation", () => {
   installFakeDom();
   try {
     const { calls, row } = createFileRow();
@@ -195,7 +195,15 @@ test("focused rows expose listbox state and support Enter, Space, and arrow keys
     assert.equal(row.tabIndex, 0);
 
     const enter = row.dispatch("keydown", { key: "Enter" });
+    assert.deepEqual(calls.open, []);
+    assert.deepEqual(calls.select, [{
+      path: "/media/Example.mkv",
+      behavior: { additive: true, restoreFocus: true },
+      shiftKey: false,
+    }]);
+
     const space = row.dispatch("keydown", { key: " " });
+    assert.deepEqual(calls.open, ["/media/Example.mkv"]);
     const down = row.dispatch("keydown", { key: "ArrowDown" });
     const shiftUp = row.dispatch("keydown", { key: "ArrowUp", shiftKey: true });
     const commandDown = row.dispatch("keydown", { key: "ArrowDown", metaKey: true });
@@ -216,6 +224,46 @@ test("focused rows expose listbox state and support Enter, Space, and arrow keys
       ["/media/Example.mkv", "ArrowDown", { extendSelection: false }],
       ["/media/Example.mkv", "ArrowUp", { extendSelection: true }],
     ]);
+  } finally {
+    delete global.document;
+    delete global.QuickFoldersView;
+    delete global.QuickFoldersFileTypes;
+  }
+});
+
+test("focused folder rows open with Enter or Space", () => {
+  installFakeDom();
+  try {
+    const folder = { name: "Shows", path: "/media/Shows", isDir: true };
+    const { calls, row } = createFileRow({ item: folder });
+
+    const enter = row.dispatch("keydown", { key: "Enter" });
+    const space = row.dispatch("keydown", { key: " " });
+
+    assert.equal(enter.defaultPrevented && enter.propagationStopped, true);
+    assert.equal(space.defaultPrevented && space.propagationStopped, true);
+    assert.deepEqual(calls.folders, [folder.path, folder.path]);
+    assert.deepEqual(calls.open, []);
+    assert.deepEqual(calls.select, []);
+  } finally {
+    delete global.document;
+    delete global.QuickFoldersView;
+    delete global.QuickFoldersFileTypes;
+  }
+});
+
+test("row shortcuts do not override a nested button's keyboard activation", () => {
+  installFakeDom();
+  try {
+    const folder = { name: "Shows", path: "/media/Shows", isDir: true };
+    const { calls, row } = createFileRow({ item: folder });
+    const button = new FakeElement("button");
+    const enter = row.dispatch("keydown", { key: "Enter", target: button });
+    const space = row.dispatch("keydown", { key: " ", target: button });
+
+    assert.equal(enter.defaultPrevented, false);
+    assert.equal(space.defaultPrevented, false);
+    assert.deepEqual(calls.folders, []);
   } finally {
     delete global.document;
     delete global.QuickFoldersView;
