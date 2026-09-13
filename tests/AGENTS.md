@@ -1,6 +1,6 @@
 # Test guide
 
-Tests use the built-in `node:test` runner and strict assertions. Keep the suite dependency-free and deterministic.
+Unit and integration tests use the built-in `node:test` runner and strict assertions. Browser UI tests use the pinned, development-only Playwright dependency. Keep every suite deterministic and keep dependencies out of the shipped plugin.
 
 ## Test design
 
@@ -22,4 +22,6 @@ Tests use the built-in `node:test` runner and strict assertions. Keep the suite 
 ## Verification
 
 - Run one file while iterating with `node --test tests/<name>.test.js`.
+- Run integration tests with `npm run test:integration`.
+- Run the functional WebKit suite with `npm run test:ui`; use its injected IINA boundary rather than production test hooks.
 - Run `npm test` before handoff; run `npm run verify` when changes affect packaging, docs, or the manifest.

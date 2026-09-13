@@ -100,6 +100,8 @@ The repository has no runtime npm dependencies. Node.js 20+ provides the test an
 ```sh
 git clone https://github.com/JakeCalkins/iina-quick-folders-plugin.git
 cd iina-quick-folders-plugin
+npm ci
+npx playwright install webkit
 npm run verify
 ```
 

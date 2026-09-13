@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Added Playwright WebKit functional UI coverage and cross-module integration workflow tests
 - Added durable playback progress, configurable automatic completion, conservative resume, and Continue Watching
 - Added Recently Added, Unwatched, and filename-based Continue Series smart views
 - Added list and poster-grid layouts backed by path-stable virtualization for 100,000-item result sets
